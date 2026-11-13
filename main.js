@@ -229,6 +229,35 @@ app.whenReady().then(async () => {
   }, 20000);
 });
 
+// ---------- votos do TopIdle: cada conta abre no próprio perfil do Brave ----------
+// O app só ABRE a página de voto (com o nick já preenchido) no perfil escolhido; votar e autorizar
+// no Google é com você — o TopIdle pede o Google justamente pra provar que o voto é de uma pessoa.
+function bravePaths() {
+  const local = process.env.LOCALAPPDATA || '';
+  const exe = [path.join(process.env.ProgramFiles || 'C:\Program Files', 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\Program Files (x86)', 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+    path.join(local, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe')].find(p => fs.existsSync(p));
+  return { exe, dados: path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data') };
+}
+function lerPerfisBrave() {
+  const { dados } = bravePaths();
+  try {
+    const ls = JSON.parse(fs.readFileSync(path.join(dados, 'Local State'), 'utf8'));
+    return Object.entries(ls.profile?.info_cache || {}).filter(([dir]) => /^(Default|Profile \d{1,3})$/.test(dir)).map(([dir, v]) => ({ dir, nome: v.name || dir }));
+  } catch { return [{ dir: 'Default', nome: 'Padrão' }]; }
+}
+ipcMain.handle('brave:perfis', () => (bravePaths().exe ? { perfis: lerPerfisBrave() } : { erro: 'Brave não encontrado' }));
+ipcMain.handle('brave:votar', (_e, { perfil, url }) => {
+  let u;
+  try { u = new URL(url); } catch { return { erro: 'link inválido' }; }
+  if (u.protocol !== 'https:' || !/(^|\.)topidle\./i.test(u.hostname)) return { erro: 'o link não é do TopIdle' };
+  const { exe } = bravePaths();
+  if (!exe) return { erro: 'Brave não encontrado' };
+  if (!/^(Default|Profile \d{1,3})$/.test(perfil || '') || !lerPerfisBrave().some(p => p.dir === perfil)) return { erro: 'esse perfil não existe no Brave' }; // só perfis de verdade
+  require('child_process').spawn(exe, [`--profile-directory=${perfil}`, u.href], { detached: true, stdio: 'ignore' }).unref();
+  return { ok: true };
+});
+
 // ---------- comparador de Pokémon ----------
 // Abre o comparador (arquivo do usuário, sem alteração) numa janela própria; a ponte preenche as fichas.
 let comparadorWin = null, comparadorConta = null;
