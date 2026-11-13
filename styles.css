@@ -359,7 +359,7 @@ button.ghost:hover { color: var(--text); background: var(--card2); }
 .pc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 /* Vote & Ganhe */
 .voto-menu { width: 380px; }
-.voto-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line, #342a46); }
+.voto-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line, #342a46); }
 .voto-row select { max-width: 120px; }
 .voto-menu > button { width: 100%; margin-top: 8px; padding: 8px; border-radius: 8px; border: 1px solid var(--line, #342a46); background: var(--card2, #261f34); color: inherit; cursor: pointer; }
 .voto-menu > button.accent { background: #7c3aed; border-color: #7c3aed; color: #fff; font-weight: 600; }

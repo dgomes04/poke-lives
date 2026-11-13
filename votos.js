@@ -1,11 +1,10 @@
 // Vote & Ganhe (TopIdle): confere se o voto de cada conta está liberado, avisa e abre a página de voto
-// de cada conta no perfil do Brave escolhido (cada conta vota com o próprio Google).
-// O voto em si (votar e autorizar no Google) é feito por você.
+// de cada conta numa janela do app com sessão própria (o login do TopIdle de cada conta fica salvo nela).
+// O clique em "Votar agora" (que passa pela checagem da Cloudflare) é feito por você.
 
 const VOTO_CHECAR = 30 * 60e3;
 const votoInfo = {};       // id -> { ativo, esperaMs, url, votos, diamantes, noPar, votosPorDiamante, nick, em }
 const votoAvisado = {};    // id -> já avisou deste voto liberado
-let bravePerfis = null;
 
 // ---------- dentro do jogo ----------
 async function pageVoto() {
@@ -21,7 +20,6 @@ async function pageVoto() {
 
 // ---------- lógica ----------
 const votoLiberado = (v) => !!(v && v.ativo && v.url && v.esperaMs - (Date.now() - v.em) <= 0);
-const votoPerfil = (id) => (cfg.settings.votoPerfil || {})[id] || 'Default';
 
 async function checarVotos() {
   for (const a of cfg.settings.pokeAccounts) {
@@ -43,8 +41,8 @@ function avisarVotos() {
   }
   if (novos.length && cfg.settings.votoAuto !== false) {
     // abre sozinho, igual às outras automações: você só vota e autoriza com o Google em cada aba
-    blog(`Voto do TopIdle liberado: ${novos.join(', ')}. Abrindo no Brave…`, 'ok', 'conta');
-    notify('Voto liberado no TopIdle', `Abri o voto de ${novos.join(', ')} no Brave: é só votar e autorizar.`, 'voto:' + novos.join(','), 0);
+    blog(`Voto do TopIdle liberado: ${novos.join(', ')}. Abrindo as janelas de voto…`, 'ok', 'conta');
+    notify('Voto liberado no TopIdle', `Abri o voto de ${novos.join(', ')}: é só clicar em "Votar agora".`, 'voto:' + novos.join(','), 0);
     (async () => { for (const a of cfg.settings.pokeAccounts) if (novos.includes(a.name)) { await abrirVoto(a.id); await sleep(1500); } })();
   } else if (novos.length) {
     blog(`Voto do TopIdle liberado: ${novos.join(', ')}. Abra em Votar → Abrir votos liberados.`, 'ok', 'conta');
@@ -61,16 +59,15 @@ function horasTxt(ms) {
 async function abrirVoto(id) {
   const v = votoInfo[id];
   if (!v || !v.url) return blog(`${accName(id)}: o link de voto ainda não foi lido (o jogo precisa estar logado).`, 'err', 'conta');
-  const r = await window.api.braveVotar(votoPerfil(id), v.url);
+  const r = await window.api.votoJanela(id, v.url, accName(id));
   if (r.erro) blog(`${accName(id)}: não abri o voto (${r.erro}).`, 'err', 'conta');
-  else blog(`${accName(id)}: abri o TopIdle no perfil "${nomePerfil(votoPerfil(id))}" do Brave. Vote e autorize com o Google desta conta.`, '', 'conta');
+  else blog(`${accName(id)}: abri a janela de voto. Clique em "Votar agora".`, '', 'conta');
 }
 async function abrirVotosLiberados() {
   const lista = cfg.settings.pokeAccounts.filter(a => votoLiberado(votoInfo[a.id]));
   if (!lista.length) return blog('Nenhum voto liberado agora.', '', 'conta');
-  for (const a of lista) { await abrirVoto(a.id); await sleep(1500); } // um de cada vez pro Brave abrir os perfis certinho
+  for (const a of lista) { await abrirVoto(a.id); await sleep(1500); } // uma janela de cada vez
 }
-const nomePerfil = (dir) => bravePerfis?.find(p => p.dir === dir)?.nome || dir;
 
 function renderVotoMenu() {
   const m = $('votoMenu');
@@ -80,27 +77,19 @@ function renderVotoMenu() {
   const badge = $('votoBadge');
   if (badge) { badge.textContent = liberados; badge.hidden = !liberados; }
   if (m.closest('.dd')?.classList.contains('open') && m.contains(document.activeElement)) return; // não atrapalha quem está escolhendo
-  const perfis = bravePerfis || [{ dir: 'Default', nome: 'Padrão' }];
-  const usados = {};
-  for (const a of accs) usados[votoPerfil(a.id)] = (usados[votoPerfil(a.id)] || 0) + 1;
-  const repetido = Object.values(usados).some(n => n > 1);
   m.innerHTML = `<div class="mtitle">Vote & Ganhe · 2 votos = 1 💎</div>
-    <label class="row switch" title="Quando o voto de uma conta libera, o app abre o TopIdle dela no perfil do Brave escolhido. Votar e autorizar no Google continua com você.">Abrir votos sozinho <input type="checkbox" id="votoAuto" ${cfg.settings.votoAuto !== false ? 'checked' : ''}><i></i></label>` + accs.map(a => {
+    <label class="row switch" title="Quando o voto de uma conta libera, o app abre a janela de voto dela. O clique em Votar agora continua com você.">Abrir votos sozinho <input type="checkbox" id="votoAuto" ${cfg.settings.votoAuto !== false ? 'checked' : ''}><i></i></label>` + accs.map(a => {
     const v = votoInfo[a.id];
     const st = !v ? '<span class="muted">conferindo…</span>' : v.erro ? `<span class="pc-warn">${v.erro}</span>`
       : !v.ativo ? '<span class="muted">voto desligado</span>'
       : votoLiberado(v) ? '<span class="ok">liberado</span>' : `<span class="muted">volta em ${horasTxt(v.esperaMs - (Date.now() - v.em))}</span>`;
     return `<div class="voto-row">
       <div><b>${a.name}</b> <small class="muted">${v?.nick ? 'nick ' + v.nick : ''}</small><br><small>${st}${v?.votos != null ? ` · ${v.votos} votos · ${v.diamantes ?? 0} 💎` : ''}</small></div>
-      <select data-voto-perfil="${a.id}" title="Perfil do Brave logado no Google desta conta">${perfis.map(p => `<option value="${p.dir}" ${votoPerfil(a.id) === p.dir ? 'selected' : ''}>${p.nome}</option>`).join('')}</select>
       <button data-voto-abrir="${a.id}" ${votoLiberado(v) ? '' : 'class="ghost"'}>Abrir</button></div>`;
   }).join('') +
-  (repetido ? `<p class="hint">Cada conta vota com um Google diferente: no Brave, crie um perfil para cada (menu do perfil → Adicionar), entre no Google dela e escolha aqui.</p>` : '') +
+  `<p class="hint">Cada conta tem a própria janela de voto. Na primeira vez, entre no TopIdle nela; o login fica salvo.</p>` +
   `<button id="votoTodos" class="accent">Abrir votos liberados${liberados ? ` (${liberados})` : ''}</button>
    <button id="votoChecar" class="ghost">Conferir agora</button>`;
-  m.querySelectorAll('[data-voto-perfil]').forEach(sel => sel.onchange = () => {
-    (cfg.settings.votoPerfil ||= {})[sel.dataset.votoPerfil] = sel.value; save(); renderVotoMenu();
-  });
   $('votoAuto').onchange = () => { cfg.settings.votoAuto = $('votoAuto').checked; save(); };
   m.querySelectorAll('[data-voto-abrir]').forEach(b => b.onclick = () => abrirVoto(b.dataset.votoAbrir));
   $('votoTodos').onclick = () => abrirVotosLiberados();
@@ -114,7 +103,6 @@ window.votoResumo = () => cfg.settings.pokeAccounts.map(a => {
 
 (async function iniciarVotos() {
   while (typeof cfg === 'undefined' || !cfg || !cfg.settings?.pokeAccounts || !$('votoMenu')) await sleep(500);
-  try { const r = await window.api.bravePerfis(); bravePerfis = r.perfis || null; } catch { /* sem Brave */ }
   renderVotoMenu();
   await sleep(90e3); // espera os jogos carregarem
   checarVotos();

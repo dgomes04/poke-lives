@@ -212,7 +212,9 @@ app.whenReady().then(async () => {
           if (req.url.startsWith('/shot')) {
             const file = decodeURIComponent((req.url.split('file=')[1] || '').split('&')[0]);
             out = body ? await win.webContents.executeJavaScript(body) : null; // dataURL de um webview
-            const alvo = req.url.includes('cmp=1') && comparadorWin ? comparadorWin : win;
+            const titulo = decodeURIComponent((req.url.match(/[?&]janela=([^&]+)/) || [])[1] || '');
+            const alvo = titulo ? (BrowserWindow.getAllWindows().find(w => w.getTitle().includes(titulo)) || win)
+              : req.url.includes('cmp=1') && comparadorWin ? comparadorWin : win;
             const png = out ? Buffer.from(String(out).split(',')[1], 'base64') : (await alvo.webContents.capturePage()).toPNG();
             fs.writeFileSync(file, png); out = file;
           } else if (req.url.startsWith('/cmp')) out = await comparadorWin?.webContents.executeJavaScript(body); // janela do comparador
@@ -229,32 +231,26 @@ app.whenReady().then(async () => {
   }, 20000);
 });
 
-// ---------- votos do TopIdle: cada conta abre no próprio perfil do Brave ----------
-// O app só ABRE a página de voto (com o nick já preenchido) no perfil escolhido; votar e autorizar
-// no Google é com você — o TopIdle pede o Google justamente pra provar que o voto é de uma pessoa.
-function bravePaths() {
-  const local = process.env.LOCALAPPDATA || '';
-  const exe = [path.join(process.env.ProgramFiles || 'C:\Program Files', 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || 'C:\Program Files (x86)', 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
-    path.join(local, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe')].find(p => fs.existsSync(p));
-  return { exe, dados: path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data') };
-}
-function lerPerfisBrave() {
-  const { dados } = bravePaths();
-  try {
-    const ls = JSON.parse(fs.readFileSync(path.join(dados, 'Local State'), 'utf8'));
-    return Object.entries(ls.profile?.info_cache || {}).filter(([dir]) => /^(Default|Profile \d{1,3})$/.test(dir)).map(([dir, v]) => ({ dir, nome: v.name || dir }));
-  } catch { return [{ dir: 'Default', nome: 'Padrão' }]; }
-}
-ipcMain.handle('brave:perfis', () => (bravePaths().exe ? { perfis: lerPerfisBrave() } : { erro: 'Brave não encontrado' }));
-ipcMain.handle('brave:votar', (_e, { perfil, url }) => {
+// ---------- votos do TopIdle ----------
+// O app só ABRE a página de voto; o clique em "Votar agora" (checagem da Cloudflare) é feito por você.
+// janela de voto de cada conta: sessão própria (persist:voto-<conta>), o login do TopIdle fica salvo nela
+const votoJanelas = new Map();
+ipcMain.handle('voto:janela', (_e, { conta, url, nome }) => {
   let u;
   try { u = new URL(url); } catch { return { erro: 'link inválido' }; }
   if (u.protocol !== 'https:' || !/(^|\.)topidle\./i.test(u.hostname)) return { erro: 'o link não é do TopIdle' };
-  const { exe } = bravePaths();
-  if (!exe) return { erro: 'Brave não encontrado' };
-  if (!/^(Default|Profile \d{1,3})$/.test(perfil || '') || !lerPerfisBrave().some(p => p.dir === perfil)) return { erro: 'esse perfil não existe no Brave' }; // só perfis de verdade
-  require('child_process').spawn(exe, [`--profile-directory=${perfil}`, u.href], { detached: true, stdio: 'ignore' }).unref();
+  if (!/^[\w-]{1,40}$/.test(conta || '')) return { erro: 'conta inválida' };
+  let w = votoJanelas.get(conta);
+  if (w && !w.isDestroyed()) { w.loadURL(u.href); if (w.isMinimized()) w.restore(); w.show(); w.focus(); return { ok: true }; }
+  w = new BrowserWindow({
+    width: 1100, height: 860, title: `Votar · ${String(nome || conta).slice(0, 30)}`, autoHideMenuBar: true,
+    icon: path.join(__dirname, 'build', 'icon.png'), backgroundColor: '#14101c',
+    webPreferences: { partition: `persist:voto-${conta}` },
+  });
+  w.on('page-title-updated', (ev) => ev.preventDefault()); // o título diz de qual conta é a janela
+  w.on('closed', () => votoJanelas.delete(conta));
+  votoJanelas.set(conta, w);
+  w.loadURL(u.href);
   return { ok: true };
 });
 

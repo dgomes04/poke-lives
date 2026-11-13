@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('api', {
   phoneSet: (cfg) => ipcRenderer.invoke('phone:set', cfg),
   phoneInfo: () => ipcRenderer.invoke('phone:info'),
   comparar: (conta) => ipcRenderer.invoke('comparador:abrir', conta),
-  bravePerfis: () => ipcRenderer.invoke('brave:perfis'),
-  braveVotar: (perfil, url) => ipcRenderer.invoke('brave:votar', { perfil, url }),
+  votoJanela: (conta, url, nome) => ipcRenderer.invoke('voto:janela', { conta, url, nome }),
   login:(platform, partition) => ipcRenderer.invoke('login', { platform, partition }),
 });
