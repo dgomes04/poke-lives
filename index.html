@@ -1,0 +1,147 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Poke Lives</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1 title="Senhas não são salvas aqui: o login fica na sessão do próprio site. Twitch e Kick avisam que farmar pontos com várias contas pode dar ban por IP.">Poke Lives<span id="perLabel" hidden>2</span></h1>
+    <nav class="tabs" id="tabs">
+      <span class="tabind" id="tabInd"></span>
+      <button id="tabLives" class="on">Lives</button>
+      <button id="openPoke">PokeIdle <span id="pokeBadge"></span></button>
+    </nav>
+    <span class="grow"></span>
+    <button id="openRedeem" class="pill" data-ic="gift" title="Abrir qualquer canal pra resgatar no mercado de pontos">Resgate</button>
+    <button id="showStats" class="pill" data-ic="chart" title="Resumo do dia">Resumo</button>
+    <button id="openSettings" class="iconbtn" data-ic="settings" title="Configurações"></button>
+  </header>
+
+  <!-- painel de configurações (abre deslizando da direita) -->
+  <div id="settingsShade"></div>
+  <div id="settings">
+    <div class="sHead"><b>Configurações</b><button id="closeSettings" class="iconbtn" data-ic="x" title="Fechar"></button></div>
+    <h4>Lives</h4>
+    <label class="row" title="Quantas lives abertas por plataforma (cada uma pesa ~300-500 MB)">Lives abertas
+      <select id="perPlatform"><option value="1">1 + 1</option><option value="2">2 + 2</option></select></label>
+    <label class="row" title="Quais lives ao vivo entram primeiro na grade (os fixados ★ sempre vêm antes)">Prioridade
+      <select id="priority"><option value="points">Mais pontos</option><option value="list">Ordem da lista</option></select></label>
+    <label class="row">Checar ao vivo a cada
+      <select id="interval"><option value="15">15s</option><option value="30">30s</option><option value="60">60s</option><option value="120">2min</option></select></label>
+    <label class="row switch" title="O som sai mudo no seu PC, mas a live continua tocando">Mudo no PC <input type="checkbox" id="mutePc"><i></i></label>
+    <label class="row switch" title="Qualidade baixa (160p) nas lives">Economia (160p) <input type="checkbox" id="economy"><i></i></label>
+    <label class="row switch" title="Clica sozinho no baú de bônus de pontos da Twitch">Pegar baú de bônus <input type="checkbox" id="autoBonus"><i></i></label>
+    <label class="row switch" title="Esconde as mensagens do chat e a barra lateral das lives (economiza memória)">Chat leve <input type="checkbox" id="lightChat"><i></i></label>
+    <div class="row2"><button id="checkNow" data-ic="refresh">Verificar agora</button><button id="scanPoints" data-ic="coin" title="Visita cada canal da lista e lê seu saldo de pontos">Pontos</button></div>
+    <h4>Contas</h4>
+    <div class="acct" id="acctTwitch"><span class="plat twitch">Twitch</span><span class="acct-st">verificando…</span><button id="loginTwitch" class="sm">Entrar</button></div>
+    <div class="acct" id="acctKick"><span class="plat kick">Kick</span><span class="acct-st">verificando…</span><button id="loginKick" class="sm">Entrar</button></div>
+    <input type="checkbox" id="secondary" hidden>
+    <h4>App</h4>
+    <label class="row switch" title="Avisos do Windows: boost, shiny, conta desconectada, hunt trocada">Avisos do Windows <input type="checkbox" id="notify"><i></i></label>
+    <label class="row switch" title="Abre uma página só de leitura na rede de casa: contas, drops do dia, lives e histórico, ao vivo">Acompanhar pelo celular <input type="checkbox" id="phoneOn"><i></i></label>
+    <div id="phoneBox" class="phone-box" hidden>
+      <img id="phoneQr" alt="QR code do link do celular" hidden><div id="phoneQrs" class="phone-qrs"></div>
+      <div class="phone-txt">
+        <p>Com o celular <b>no mesmo Wi-Fi</b>, aponte a câmera para o QR code.</p>
+        <p class="hint" id="phoneUrls"></p>
+        <div class="row2"><button id="phoneCopy" data-ic="external">Copiar link</button><button id="phoneNew" data-ic="key">Novo link</button></div>
+      </div>
+    </div>
+    <div class="row2"><button id="showMem" data-ic="memory">Ver uso de memória</button></div>
+    <p class="hint">Senhas não são salvas aqui: o login fica na sessão do próprio site. Twitch e Kick avisam que farmar pontos com várias contas pode dar ban por IP.</p>
+  </div>
+  <main>
+    <aside>
+      <h2>Canais</h2>
+      <form id="addForm">
+        <input id="addInput" placeholder="https://www.twitch.tv/canal ou kick.com/canal" autocomplete="off">
+        <button type="submit">Adicionar</button>
+      </form>
+      <div class="filters">
+        <button data-f="all" class="on">Todos</button>
+        <button data-f="twitch">Twitch</button>
+        <button data-f="kick">Kick</button>
+        <button data-f="live">Ao vivo</button>
+        <button data-f="pts" title="Canais onde você tem pelo menos 300 pontos (dá pra um boost)">Com pontos</button>
+      </div>
+      <div id="lastCheck" class="muted"></div>
+      <ul id="list"></ul>
+    </aside>
+    <section id="grid"></section>
+    <section id="redeem" hidden>
+      <form id="redeemBar" class="bar">
+        <b>Resgate</b>
+        <input id="redeemInput" list="redeemList" placeholder="link ou nome (ex.: kick.com/yetz ou twitch yetz)" autocomplete="off">
+        <datalist id="redeemList"></datalist>
+        <select id="redeemPlat"><option value="twitch">Twitch</option><option value="kick">Kick</option></select>
+        <button type="submit">Abrir</button>
+        <span class="grow"></span>
+        <span class="muted">As lives da grade continuam rodando por trás.</span>
+        <button type="button" id="redeemClose">Fechar</button>
+      </form>
+      <div id="redeemBody" class="empty">Escolha um canal pra abrir e resgatar o boost no mercado de pontos.</div>
+    </section>
+    <section id="poke" class="closed">
+      <div class="bar">
+        <span id="pokeChips"></span>
+        <span class="grow"></span>
+        <div class="dd">
+          <button id="boostBtn" class="pill" data-ic="bolt">Boost</button>
+          <div class="menu" id="boostMenu">
+            <div class="mtitle">Manter ativos</div>
+            <label class="row switch">+15% XP <input type="checkbox" id="bXp"><i></i></label>
+            <label class="row switch">+15% Captura <input type="checkbox" id="bCapture"><i></i></label>
+            <label class="row switch">+15% Secret Lure <input type="checkbox" id="bLure"><i></i></label>
+            <div class="mtitle">Resgate</div>
+            <label class="row switch">Resgate automático <input type="checkbox" id="bAuto"><i></i></label>
+            <label class="row switch">Pedir confirmação <input type="checkbox" id="bConfirm"><i></i></label>
+            <div class="mtitle">Pokebolas</div>
+            <label class="row switch" title="Quando a captura automática usa Ultra Ball e ela acaba, o app compra o máximo que o ouro paga (Market → Pokebolas → Máx)">Comprar Ultra Ball sozinho <input type="checkbox" id="autoUltra"><i></i></label>
+            <label class="row switch" title="Com o painel fechado, para de desenhar os jogos (economiza CPU), mas a caçada rende ~17% menos XP.">Leve com o painel fechado <input type="checkbox" id="pokeLight"><i></i></label>
+            <button id="bCheck">Conferir agora</button>
+          </div>
+        </div>
+        <button id="compareBtn" class="pill" data-ic="chart" title="Comparar um Pokémon seu com outro (seu ou do Mercado)">Comparar</button>
+        <div class="dd">
+          <button id="snipeBtn" class="pill" data-ic="target" title="Rotom Sniper: abre o Cockpit de snipe do Mercado na conta escolhida">Snipe</button>
+          <div class="menu right" id="snipeMenu"></div>
+        </div>
+        <button id="pokeAdd" class="iconbtn" data-ic="plus" title="Adicionar conta"></button>
+        <button id="pokeClose" hidden>Fechar</button>
+      </div>
+      <div class="poke-body">
+        <div id="pokeView"></div>
+        <div id="pokeCards"></div>
+        <div class="poke-side">
+          <h3>Boosts</h3>
+          <table id="boostTable"></table>
+          <div id="boostNext" class="muted"></div>
+          <h3>Histórico</h3>
+          <div id="logFilter"></div>
+          <ul id="boostLog"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div id="statsBox" hidden>
+    <div class="statsHead"><b>Resumo de hoje</b><button id="statsClose">Fechar</button></div>
+    <div id="statsBody"></div>
+  </div>
+  <div id="confirmBox" hidden>
+    <div id="confirmText"></div>
+    <div><button id="confirmYes" class="accent">Resgatar</button> <button id="confirmNo">Cancelar</button></div>
+  </div>
+  <script src="icons.js"></script>
+  <script src="renderer.js"></script>
+  <script src="boost.js"></script>
+  <script src="hunt.js"></script>
+  <script src="points.js"></script>
+  <script src="stats.js"></script>
+  <script src="phone.js"></script>
+  <script src="compras.js"></script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14101c">
+<meta name="robots" content="noindex">
+<title>Poke Lives</title>
+<style>
+  :root { --bg:#14101c; --card:#1e1829; --card2:#261f34; --line:#342a46; --tx:#ece8f4; --mut:#9c92b0; --acc:#c4b5fd; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --gold:#fbbf24; --tw:#a970ff; --kick:#53fc18; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--tx); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 0 16px calc(76px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; background: var(--bg); padding: 12px 0 10px; z-index: 3; }
+  h1 { font-size: 17px; margin: 0; flex: 1; font-weight: 600; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mut); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+  .live.on .dot { background: var(--ok); }
+  .sec { color: var(--mut); font-size: 12px; margin: 16px 2px 6px; }
+  .k { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+  .k b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .k small { color: var(--mut); font-size: 11px; }
+  .k.big b { font-size: 24px; color: var(--acc); }
+  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; margin-bottom: 8px; }
+  .card.pad { padding: 10px 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #2a2236; }
+  .row:last-child { border: 0; }
+  .row > span:last-child { text-align: right; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--mut); white-space: nowrap; }
+  .ok { color: var(--ok); } .err { color: var(--err); } .warn { color: var(--warn); } .gold { color: var(--gold); } .acc { color: var(--acc); } .mut { color: var(--mut); }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; margin: -2px 0 8px; }
+  .chips span { font-size: 11px; background: var(--card2); border-radius: 6px; padding: 2px 7px; color: #c9c1da; }
+  .acct { cursor: pointer; }
+  .acct.open { border-color: #7c3aed; }
+  .acct .det { display: none; padding-bottom: 10px; }
+  .acct.open .det { display: block; }
+  .tela { margin-top: 8px; width: 100%; border-radius: 10px; display: block; background: #000; min-height: 80px; }
+  button { font: inherit; color: var(--tx); background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; width: 100%; margin-top: 8px; }
+  .alert { display: flex; gap: 8px; align-items: flex-start; }
+  .alert i { font-style: normal; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: #1a1424; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 4; }
+  nav a { text-align: center; padding: 8px 0 10px; font-size: 11px; color: var(--mut); text-decoration: none; }
+  nav a.on { color: var(--acc); }
+  nav svg { display: block; margin: 0 auto 2px; width: 22px; height: 22px; }
+  button.retomar { background: #5b21b6; border-color: #7c3aed; font-weight: 600; }
+  .aviso { background: #3a1d24; border: 1px solid #6b2a36; color: #fecaca; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .vazio { color: var(--mut); padding: 10px 0; }
+  .hp { height: 5px; border-radius: 3px; background: #2a2236; overflow: hidden; margin-top: 4px; }
+  .hp i { display: block; height: 100%; background: var(--ok); }
+  .nota { color: var(--mut); font-size: 11px; margin: 18px 2px 0; }
+</style>
+</head>
+<body>
+<header><h1 id="titulo">Poke Lives</h1><span class="live" id="live"><span class="dot"></span><span id="liveTxt">conectando…</span></span></header>
+<div id="aviso" class="aviso" hidden></div>
+<main id="app"><p class="vazio">Carregando…</p></main>
+<nav id="nav">
+  <a data-tab="resumo" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>Resumo</a>
+  <a data-tab="contas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>Contas</a>
+  <a data-tab="itens"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>Itens</a>
+  <a data-tab="shiny"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18a6 6 0 0 1 6-6 6 6 0 0 1-6-6 6 6 0 0 1-6 6 6 6 0 0 1 6 6zM17 9a2 2 0 0 1 2 2 2 2 0 0 1 2-2 2 2 0 0 1-2-2 2 2 0 0 1-2 2z"/></svg>Shiny</a>
+</nav>
+<script>
+const K = new URLSearchParams(location.search).get('k') || '';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const n = (v) => v == null ? '—' : Math.round(Number(v)).toLocaleString('pt-BR');
+const curto = (v) => {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' bi';
+  if (a >= 1e6) return (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi';
+  if (a >= 1e4) return Math.round(v / 1e3).toLocaleString('pt-BR') + ' mil';
+  return n(v);
+};
+const usd = (g) => 'US$ ' + ((g || 0) * 0.01).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const dia = (d) => { const [y, m, dd] = String(d).split('-'); return `${dd}/${m}`; };
+const TITULOS = { resumo: 'Poke Lives', contas: 'Contas', itens: 'Itens vendíveis', shiny: 'Shiny' };
+let tab = (location.hash || '#resumo').slice(1);
+if (!TITULOS[tab]) tab = 'resumo';
+const abertas = new Set();     // contas expandidas
+const telas = new Set();       // contas com a tela ao vivo aberta
+const pedindo = new Set();
+const ultimaTela = {};
+let ultimo = null;
+
+function estadoCls(e) { return e === 'caçando' ? 'ok' : e === 'carregando' || e === 'reconectando' ? 'warn' : 'err'; }
+
+function vResumo(d) {
+  const t = d.total;
+  let h = `<div class="k big" style="margin-bottom:8px"><small>Rendeu hoje (drops, sem a taxa)</small><b>${n(t.valorHojeGemas)} gemas · ${usd(t.valorHojeGemas)}</b>
+    <small>${t.media7 != null ? `média dos últimos dias: ${usd(t.media7)}/dia` : 'a média aparece depois do primeiro dia completo'}</small></div>
+  <div class="g2"><div class="k"><small>Itens vendíveis</small><b>${n(t.valorItens)} gemas</b></div><div class="k"><small>Gemas nas contas</small><b>${n(t.gemas)}</b></div></div>
+  <div class="g2"><div class="k"><small>Shinies hoje</small><b class="gold">${t.shinyHoje} capturado${t.shinyHoje === 1 ? '' : 's'}</b></div><div class="k"><small>Boss tokens hoje</small><b>+${n(t.tokensHoje)}</b></div></div>`;
+  h += '<div class="sec">Alertas</div><div class="card">' + (d.alertas.length ? d.alertas.map(a =>
+    `<div class="row alert"><span class="${a.tipo === 'shiny' ? 'gold' : a.tipo === 'erro' ? 'err' : 'warn'}">${a.tipo === 'shiny' ? '✦' : '!'} ${esc(a.txt)}</span><span class="mut">${a.t ? hora(a.t) : ''}</span></div>`).join('')
+    : '<div class="vazio">Tudo rodando normal.</div>') + '</div>';
+  const fora = d.contas.filter(c => c.estado === 'aberta em outro lugar');
+  if (fora.length) h += '<div class="sec">Abertas em outro lugar</div><div class="card pad">' + fora.map(c =>
+    `<div class="row" style="border:0"><span>${esc(c.nome)}</span><span class="warn">o PC está esperando</span></div><button class="retomar" data-retomar="${esc(c.id)}">Voltar a jogar ${esc(c.nome)} no PC</button>`).join('') + '</div>';
+  h += '<div class="sec">Contas</div><div class="card">' + d.contas.map(c =>
+    `<div class="row"><span>${c.principal ? '★ ' : ''}${esc(c.nome)}</span><span class="${estadoCls(c.estado)}">${c.estado === 'caçando' ? (c.outland ? 'Outland' : 'caçando') : esc(c.estado)} · Nv ${n(c.tlvl)}</span></div>`).join('') + '</div>';
+  h += '<div class="sec">Lives assistindo</div><div class="card">' + (d.lives.length ? d.lives.map(l =>
+    `<div class="row"><span style="color:var(--${l.plat === 'twitch' ? 'tw' : 'kick'})">${l.plat === 'twitch' ? 'Twitch' : 'Kick'} · ${esc(l.canal)}</span><span>${l.pontos == null ? '—' : n(l.pontos) + ' pts'}</span></div>`).join('')
+    : '<div class="vazio">Nenhuma live aberta.</div>') + '</div>';
+  return h;
+}
+
+function vContas(d) {
+  return d.contas.map((c, idx) => {
+    const sobe = c.tlvl != null && c.tlvl0 != null && c.tlvl > c.tlvl0 ? ` <span class="ok" style="font-size:11px">+${n(c.tlvl - c.tlvl0)} hoje</span>` : '';
+    const hpPct = c.hpMax ? Math.max(0, Math.min(100, (c.hp / c.hpMax) * 100)) : null;
+    const dura = c.bolasH > 0 ? c.bolasTotal / c.bolasH : null;
+    const durTxt = dura == null ? '' : dura < 1 ? ` (~${Math.max(1, Math.round(dura * 60))} min)` : ` (~${dura < 48 ? Math.round(dura) + ' h' : Math.round(dura / 24) + ' dias'})`;
+    const bolaCls = c.autoBola && c.bolasTotal === 0 ? 'err' : dura != null && dura < 3 ? 'warn' : '';
+    const bolasTxt = c.bolasTotal == null ? '' : ` · <span class="${bolaCls}">${n(c.bolasTotal)} bolas${durTxt}</span>`;
+    const resumo = `Nv ${n(c.tlvl)} · ${n(c.valorHoje)} gemas hoje${bolasTxt}${c.shinyPegos ? ` · <span class="gold">${c.shinyPegos} shiny</span>` : ''}`;
+    return `<div class="card pad acct ${abertas.has(idx) ? 'open' : ''}" data-acct="${idx}">
+      <div class="row" style="border:0;padding:2px 0"><span style="font-weight:600;font-size:15px">${c.principal ? '★ ' : ''}${esc(c.nome)}</span><span class="tag ${estadoCls(c.estado)}">${c.estado === 'caçando' && c.outland ? 'Outland' : esc(c.estado)}</span></div>
+      ${c.estado === 'aberta em outro lugar' ? `<div class="mut warn" style="margin:2px 0 4px">Aberta em outro lugar (no celular, por exemplo). O PC espera você terminar.</div><button class="retomar" data-retomar="${esc(c.id)}">Voltar a jogar no PC</button>` : ''}
+      <div class="mut">${c.parada ? `<span class="err">Farm parada: ${esc(c.parada.motivo)} há ${c.parada.min} min. Compre no Market do jogo.</span>` : resumo}</div>
+      <div class="det">
+        <div class="mut" style="margin:6px 0">${esc(c.hunt || 'sem hunt')}${c.pk ? ` · ${esc(c.pk)} Nv ${n(c.plvl)}` : ''}</div>
+        ${hpPct != null ? `<div class="hp"><i style="width:${hpPct}%;${hpPct === 0 ? 'background:var(--err)' : hpPct < 35 ? 'background:var(--warn)' : ''}"></i></div>` : ''}
+        <div class="g2" style="margin-top:8px"><div class="k"><small>Treinador</small><b>${n(c.tlvl)}${sobe}</b></div><div class="k"><small>XP/h</small><b>${curto(c.xpH)}</b></div></div>
+        <div class="g2"><div class="k"><small>Drops hoje</small><b>${n(c.valorHoje)} gemas</b></div><div class="k"><small>Shiny na hunt</small><b class="gold">${c.shinyPegos ?? 0} / ${c.shinyVistos ?? 0} vistos</b></div></div>
+        ${c.itens && (c.itens.farm.length || c.itens.vend.length) ? `<div class="card" style="margin:0 0 8px;background:var(--card2)">
+          ${c.itens.farm.length ? `<div class="mut" style="font-size:11px;margin:6px 0 2px">FARM${c.bolasH != null ? ` · ${n(c.bolasH)} bolas/h${durTxt}` : ''}</div>` + c.itens.farm.map(x =>
+            `<div class="row"><span class="${x.est === 'zero' ? 'err' : x.est === 'low' ? 'warn' : ''}">${esc(x.nomeLongo)}${x.est === 'usa' ? ' <span class="tag">automação usa</span>' : ''}</span><b class="${x.est === 'zero' ? 'err' : x.est === 'low' ? 'warn' : ''}">${n(x.qtd)}</b></div>`).join('') : ''}
+          ${c.itens.vend.length ? `<div class="mut" style="font-size:11px;margin:10px 0 2px;display:flex;justify-content:space-between"><span>VENDÍVEIS</span><span>${c.itens.vendGemas ? '≈ ' + n(c.itens.vendGemas) + ' gemas' : ''}</span></div>` +
+            c.itens.vend.slice(0, 5).map(x => `<div class="row"><span>${esc(x.nome)}</span><b>${n(x.n)}</b></div>`).join('') +
+            `<div class="row"><a data-ir="itens" class="mut" style="text-decoration:none">ver todos na aba Itens</a><span class="mut">›</span></div>` : ''}
+        </div>` : ''}
+        <div class="g2"><div class="k"><small>Gemas · diamantes</small><b>${n(c.gemas)} · ${n(c.diamantes)}</b></div><div class="k"><small>Ouro${c.ouroHoje ? ` (${c.ouroHoje > 0 ? '+' : ''}${curto(c.ouroHoje)} hoje)` : ''}</small><b>${curto(c.ouro)}</b></div></div>
+        ${c.hoje.length ? `<div class="chips">${c.hoje.map(i => `<span>${esc(i.nome)} +${n(i.n)}</span>`).join('')}</div>` : ''}
+        <button data-tela="${idx}">${telas.has(idx) ? 'Fechar tela ao vivo' : 'Ver tela ao vivo'}</button>
+        ${telas.has(idx) ? `<img class="tela" id="tela${idx}" alt="Tela de ${esc(c.nome)}" ${ultimaTela[idx] ? `src="${ultimaTela[idx]}"` : ''}>` : ''}
+      </div></div>`;
+  }).join('');
+}
+
+function vItens(d) {
+  const linha = (x, valor) => `<div class="row"><span>${esc(x.nome)}${x.hoje ? ` <span class="ok" style="font-size:11px">+${n(x.hoje)} hoje</span>` : ''}</span><span>${n(x.n)} <span class="mut">· ${valor}</span></span></div>` +
+    (x.por.length > 1 ? `<div class="chips">${x.por.map(p => `<span>${esc(p.conta)} ${n(p.n)}</span>`).join('')}</div>` : x.por.length === 1 ? `<div class="chips"><span>${esc(x.por[0].conta)}</span></div>` : '');
+  let h = `<div class="k big" style="margin-bottom:8px"><small>Valor se vender tudo (menor anúncio, sem a taxa)</small><b>${n(d.total.valorItens)} gemas · ${usd(d.total.valorItens)}</b></div>`;
+  h += '<div class="sec">Fragmentos, tokens e tickets</div><div class="card">' + (d.itens.length ? d.itens.map(x => linha(x, x.gemas != null ? `${n(x.gemas)} g` : 'sem preço')).join('') : '<div class="vazio">Nenhum.</div>') + '</div>';
+  h += '<div class="sec">Casas e bicicletas</div><div class="card">' + (d.numerados.length ? d.numerados.map(x =>
+    `<div class="row"><span>${x.tipo} ${esc(x.rar || '')} <span class="mut">#${String(x.id).padStart(6, '0')}</span>${x.anunciada ? ' <span class="tag">à venda</span>' : ''}</span><span>${x.gemas != null ? n(x.gemas) + ' g' : '—'} <span class="mut">· ${esc(x.conta)}</span></span></div>`).join('')
+    : '<div class="vazio">Nenhuma.</div>') + '</div>';
+  h += '<div class="sec">Pedras de evolução (valor em ouro)</div><div class="card">' + (d.pedras.length ? d.pedras.map(x => linha(x, x.ouro != null ? curto(x.ouro) + ' ouro' : 'sem preço')).join('') : '<div class="vazio">Nenhuma.</div>') + '</div>';
+  return h;
+}
+
+function vShiny(d) {
+  const sh = d.shiny;
+  const lure = (v) => v === undefined ? '<span class="mut">?</span>' : v ? `<span class="ok">${esc(v)}</span>` : '<span class="mut">off</span>';
+  let h = `<div class="g2"><div class="k"><small>Capturados hoje</small><b class="gold">${sh.hoje.length}</b></div><div class="k"><small>Na coleção (todas)</small><b>${n(sh.colecao)}</b></div></div>
+  <div class="card"><div class="row"><span>Secret Lure</span><span>Twitch ${lure(sh.lure.twitch)} · Kick ${lure(sh.lure.kick)}</span></div></div>`;
+  h += '<div class="sec">Capturados hoje</div><div class="card">' + (sh.hoje.length ? sh.hoje.map(x =>
+    `<div class="row"><span class="gold">✦ ${esc(x.nome)}${x.pot ? ` · P${x.pot}` : ''}${x.nivel != null ? ` · Nv ${n(x.nivel)}` : ''}</span><span class="mut">${esc(x.conta)} ${hora(x.t)}</span></div>`).join('')
+    : '<div class="vazio">Nenhum ainda hoje.</div>') + '</div>';
+  h += '<div class="sec">Por conta</div><div class="card">' + d.contas.map(c =>
+    `<div class="row"><span>${c.principal ? '★ ' : ''}${esc(c.nome)}</span><span>${c.outland ? '<span class="mut">Outland · não rola shiny</span>' : `${n(c.shinyPegos ?? 0)} / ${n(c.shinyVistos ?? 0)} vistos`} · <span class="gold">${n(c.shinyTotal)}</span> na coleção</span></div>`).join('') + '</div>';
+  h += '<div class="sec">Últimos dias</div><div class="card">' + (sh.hist.length ? sh.hist.slice().reverse().map(x =>
+    `<div class="row"><span>${dia(x.day)}</span><span>${n(x.shinies)} shiny · ${n(x.gemas)} gemas de drop</span></div>`).join('')
+    : '<div class="vazio">O histórico começa a contar a partir de amanhã.</div>') + '</div>';
+  return h;
+}
+
+function render(d) {
+  ultimo = d;
+  $('titulo').textContent = TITULOS[tab];
+  const y = window.scrollY;
+  $('app').innerHTML = ({ resumo: vResumo, contas: vContas, itens: vItens, shiny: vShiny })[tab](d) +
+    '<p class="nota">Valores usam o menor anúncio do Mercado (12/11) já sem a comissão de 15%. 1 gema = US$ 0,01 na compra (US$ 0,009 no saque). Esta página só mostra; o único comando é "Voltar a jogar no PC".</p>';
+  window.scrollTo(0, y);
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
+  if (tab === 'contas') for (const idx of telas) atualizaTela(idx);
+}
+
+document.addEventListener('click', (e) => {
+  const nv = e.target.closest('#nav a');
+  if (nv) { tab = nv.dataset.tab; history.replaceState(null, '', location.pathname + location.search + '#' + tab); window.scrollTo(0, 0); if (ultimo) render(ultimo); return; }
+  const ir = e.target.closest('[data-ir]');
+  if (ir) { tab = ir.dataset.ir; history.replaceState(null, '', location.pathname + location.search + '#' + tab); window.scrollTo(0, 0); if (ultimo) render(ultimo); return; }
+  const rt = e.target.closest('[data-retomar]');
+  if (rt) {
+    if (!confirm('Voltar a jogar esta conta no PC? Se ela estiver aberta no celular, o jogo do celular é que fica pausado.')) return;
+    rt.disabled = true; rt.textContent = 'Voltando…';
+    fetch(`/api/retomar?k=${encodeURIComponent(K)}&conta=${encodeURIComponent(rt.dataset.retomar)}`, { method: 'POST' })
+      .then(r => r.json()).then(r => { rt.textContent = r.ok ? 'Pronto: jogando no PC' : 'Não deu: ' + (r.msg || 'tente de novo'); })
+      .catch(() => { rt.textContent = 'Sem conexão com o PC'; });
+    return;
+  }
+  const bt = e.target.closest('[data-tela]');
+  if (bt) { const idx = +bt.dataset.tela; telas.has(idx) ? telas.delete(idx) : telas.add(idx); if (ultimo) render(ultimo); return; }
+  const ac = e.target.closest('[data-acct]');
+  if (ac && !e.target.closest('.det')) { const idx = +ac.dataset.acct; abertas.has(idx) ? abertas.delete(idx) : abertas.add(idx); if (ultimo) render(ultimo); }
+});
+
+function atualizaTela(idx) {
+  if (!ultimo || pedindo.has(idx)) return;
+  const id = ultimo.contas[idx]?.id;
+  if (!id) return;
+  pedindo.add(idx);
+  fetch(`/api/tela?k=${encodeURIComponent(K)}&conta=${encodeURIComponent(id)}&t=${Date.now()}`)
+    .then(r => r.status === 200 ? r.blob() : null)
+    .then(b => {
+      if (!b) return;
+      if (ultimaTela[idx]) URL.revokeObjectURL(ultimaTela[idx]);
+      ultimaTela[idx] = URL.createObjectURL(b);
+      const img = $('tela' + idx);
+      if (img) img.src = ultimaTela[idx];
+    })
+    .catch(() => {})
+    .finally(() => pedindo.delete(idx));
+}
+
+function conecta() {
+  const es = new EventSource(`/api/stream?k=${encodeURIComponent(K)}`);
+  es.onmessage = (ev) => {
+    $('live').classList.add('on');
+    $('liveTxt').textContent = 'ao vivo · ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    $('aviso').hidden = true;
+    try { const d = JSON.parse(ev.data); if (d) render(d); } catch { /* espera o próximo */ }
+  };
+  es.onerror = () => {
+    $('live').classList.remove('on');
+    $('liveTxt').textContent = 'sem conexão';
+    $('aviso').hidden = false;
+    $('aviso').textContent = 'Sem conexão com o PC. Confira se o Poke Lives está aberto e se o celular está no mesmo Wi-Fi. Tentando de novo…';
+  };
+}
+conecta();
+</script>
+</body>
+</html>
