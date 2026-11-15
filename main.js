@@ -307,6 +307,45 @@ function abrirAvaliador(anuncio) {
 ipcMain.handle('avaliador:abrir', (_e, anuncio) => { abrirAvaliador(anuncio); return true; });
 ipcMain.handle('avaliador:pendente', () => { const a = avaliadorPendente; avaliadorPendente = null; return a; });
 
+// ---------- Precificador do pokeidleguide.io (site da comunidade) ----------
+// Abre o site numa janela do app e preenche o formulário dele com o Pokémon (o cálculo é do site).
+const PRECIFICADOR_URL = 'https://pokeidleguide.io/#precificar';
+let precWin = null;
+function preencherPrecificador(w, p) {
+  if (!p) return;
+  const dados = JSON.stringify({ especie: String(p.especie || '').slice(0, 40), shiny: !!p.shiny, nivel: Number(p.nivel) || '',
+    potencia: Math.min(5, Math.max(1, Number(p.potencia) || 1)), qualidade: String(p.qualidade ?? '').replace('.', ','),
+    ivs: (p.ivs || []).slice(0, 6).map(v => Number(v) || '') });
+  w.webContents.executeJavaScript(`(async (d) => {
+    const espera = (ms) => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && !document.getElementById('pf-especie'); i++) await espera(250);
+    const q = (id) => document.getElementById(id);
+    if (!q('pf-especie')) return false;
+    const set = (el, v) => { if (!el) return; const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, String(v)); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    set(q('pf-especie'), d.especie);
+    const sh = q('pf-shiny'); if (sh && sh.checked !== d.shiny) sh.click();
+    set(q('pf-nivel'), d.nivel); set(q('pf-potencia'), d.potencia); set(q('pf-qualidade'), d.qualidade);
+    const ivs = [...document.querySelectorAll('main input[type=number]')].filter(e => e.id !== 'pf-nivel');
+    ivs.slice(0, 6).forEach((e, i) => set(e, d.ivs[i]));
+    return true;
+  })(${dados})`).catch(() => {});
+}
+ipcMain.handle('precificador:abrir', (_e, p) => {
+  if (precWin && !precWin.isDestroyed()) {
+    if (precWin.isMinimized()) precWin.restore();
+    precWin.show(); precWin.focus(); preencherPrecificador(precWin, p);
+    return true;
+  }
+  precWin = new BrowserWindow({ width: 1200, height: 900, title: 'Precificador · pokeidleguide.io', autoHideMenuBar: true,
+    icon: path.join(__dirname, 'build', 'icon.png'), backgroundColor: '#14101c', webPreferences: { partition: 'persist:guia' } });
+  precWin.on('page-title-updated', (ev) => ev.preventDefault());
+  precWin.on('closed', () => { precWin = null; });
+  precWin.webContents.once('did-finish-load', () => preencherPrecificador(precWin, p));
+  precWin.loadURL(PRECIFICADOR_URL);
+  return true;
+});
+
 // ---------- comparador de Pokémon ----------
 // Abre o comparador (arquivo do usuário, sem alteração) numa janela própria; a ponte preenche as fichas.
 let comparadorWin = null, comparadorConta = null;

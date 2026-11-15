@@ -189,7 +189,8 @@ function render(alvo, esp, r, preco, moeda) {
         ${alvo.tmElemental ? `<span class="tag">Z-Move ${esc(alvo.tmElemental)}</span>` : ''}${outland ? '<span class="tag">Outland</span>' : ''}</div></div>
       ${preco ? `<div class="price"><small class="mut">anunciado</small><br><b>${fmtP(preco)}</b><br><small class="mut">≈ US$ ${n(usd(preco), 2)} no saque</small></div>` : ''}
     </div>
-    <div class="verd ${verd.cls}"><b>${verd.txt}</b><br><span class="mut">${verd.sub}</span></div>
+    <div class="verd ${verd.cls}"><b>${verd.txt}</b><br><span class="mut">${verd.sub}</span>
+      <div style="margin-top:8px"><button id="verPrec">Comparar no Precificador (pokeidleguide.io)</button> <span class="mut" style="font-size:11px">segunda opinião: shiny pela tabela da staff</span></div></div>
     <div class="g3">
       <div class="k"><small>Força PvE (no nível dele)</small><b>${n(m.pveAgora)}</b><div class="bar"><i style="width:${pctNasc}%"></i></div><small>nascimento ${lendario ? 'de lendário' : 'nota ' + n(m.nota, 1) + '/10'} · no Nv 100: ${n(m.pve100)}</small></div>
       <div class="k"><small>Força PvP (régua da arena)</small><b>${n(m.pvp)} ⚔</b><div class="bar"><i style="width:${pctNasc}%"></i></div><small>luta como Nv ${n(m.pvpNivel)} · ${alcance}</small></div>
@@ -208,6 +209,8 @@ function render(alvo, esp, r, preco, moeda) {
       : `<p class="mut">${r.erroVendas ? esc(r.erroVendas) : `Nenhuma venda de ${esc(esp.n)} ${alvo.shiny ? 'shiny ' : ''}nos últimos 30 dias.`}</p>`}
     <p class="mut" style="font-size:11px;margin:10px 0 0">Força e nota pelas fórmulas do jogo (módulos públicos do PokeIdle). Ouro ↔ gema convertido a ~${curto(OURO_POR_GEMA)} de ouro por gema. ${alvo.tmElemental ? '' : 'Ficha colada não traz o Z-Move; se ele tiver, a força real é maior.'}</p>
   </div>`;
+  $('verPrec').onclick = () => window.av.precificador({ especie: esp.n, shiny: !!alvo.shiny, nivel: alvo.level, potencia: alvo.potencia,
+    qualidade: Number(alvo.quality).toFixed(3), ivs: STATS.map(k => alvo.ivs?.[k]) });
   const img = $('resultado').querySelector('.spr');
   if (img) img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
 }
@@ -224,5 +227,6 @@ function carregarAnuncio(a) {
 }
 $('ficha').addEventListener('input', () => { $('ficha').dataset.anuncio = ''; });
 $('avaliar').onclick = avaliar;
+$('abrirPrec').onclick = () => window.av.precificador(null);
 window.av.aoReceberAnuncio(carregarAnuncio);
 window.av.pendente().then(a => a && carregarAnuncio(a));
