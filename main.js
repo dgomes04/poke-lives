@@ -218,6 +218,10 @@ app.whenReady().then(async () => {
             const png = out ? Buffer.from(String(out).split(',')[1], 'base64') : (await alvo.webContents.capturePage()).toPNG();
             fs.writeFileSync(file, png); out = file;
           } else if (req.url.startsWith('/cmp')) out = await comparadorWin?.webContents.executeJavaScript(body); // janela do comparador
+          else if (req.url.startsWith('/janela')) { // outra janela do app, pelo título (?t=...)
+            const t = decodeURIComponent((req.url.match(/[?&]t=([^&]+)/) || [])[1] || '');
+            out = await BrowserWindow.getAllWindows().find(w => w.getTitle().includes(t))?.webContents.executeJavaScript(body);
+          }
           else out = await win.webContents.executeJavaScript(body);
           res.end(JSON.stringify(out, null, 1));
         } catch (e) { res.statusCode = 500; res.end(String(e && e.stack || e)); }
@@ -253,6 +257,55 @@ ipcMain.handle('voto:janela', (_e, { conta, url, nome }) => {
   w.loadURL(u.href);
   return { ok: true };
 });
+
+// ---------- avaliador de Pokémon (preço x força) ----------
+// Catálogo de espécies (bases, tipos, golpes): vem do comparador.html, lido uma vez.
+let especiesCache = null;
+function especies() {
+  if (especiesCache) return especiesCache;
+  especiesCache = new Map();
+  try {
+    const html = fs.readFileSync(path.join(__dirname, 'comparador.html'), 'utf8');
+    const m = html.match(/window\.PI_ESPECIES\s*=\s*(\[[\s\S]*?\]);\s*\n/);
+    for (const e of JSON.parse(m[1])) especiesCache.set(e.id, e);
+  } catch (e) { console.error('[avaliador] catálogo', e.message); }
+  return especiesCache;
+}
+const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+ipcMain.handle('avaliador:especie', (_e, q) => {
+  const mapa = especies();
+  if (typeof q === 'number' || /^\d+$/.test(String(q))) return mapa.get(Number(q)) || null;
+  const alvo = normNome(q);
+  for (const e of mapa.values()) if (normNome(e.n) === alvo) return e;
+  return null;
+});
+// o cálculo roda dentro do jogo da conta principal (módulos públicos do próprio jogo)
+ipcMain.handle('avaliador:calcular', async (_e, pedido) => {
+  try {
+    const esp = especies().get(Number(pedido?.alvo?.speciesId));
+    if (!esp) return { erro: 'espécie não encontrada no catálogo' };
+    return await phoneData(`window.avaliarNoJogo ? window.avaliarNoJogo(${JSON.stringify({ ...pedido, esp })}) : { erro: 'o app ainda está carregando' }`);
+  } catch (e) { return { erro: e.message }; }
+});
+let avaliadorWin = null, avaliadorPendente = null;
+function abrirAvaliador(anuncio) {
+  avaliadorPendente = anuncio || null;
+  if (avaliadorWin && !avaliadorWin.isDestroyed()) {
+    if (anuncio) avaliadorWin.webContents.send('avaliador:anuncio', anuncio);
+    if (avaliadorWin.isMinimized()) avaliadorWin.restore();
+    avaliadorWin.show(); avaliadorWin.focus();
+    return;
+  }
+  avaliadorWin = new BrowserWindow({
+    width: 980, height: 900, title: 'Avaliador de Pokémon', autoHideMenuBar: true,
+    icon: path.join(__dirname, 'build', 'icon.png'), backgroundColor: '#14101c',
+    webPreferences: { preload: path.join(__dirname, 'avaliador-preload.js'), contextIsolation: true },
+  });
+  avaliadorWin.on('closed', () => { avaliadorWin = null; });
+  avaliadorWin.loadFile(path.join(__dirname, 'avaliador.html'));
+}
+ipcMain.handle('avaliador:abrir', (_e, anuncio) => { abrirAvaliador(anuncio); return true; });
+ipcMain.handle('avaliador:pendente', () => { const a = avaliadorPendente; avaliadorPendente = null; return a; });
 
 // ---------- comparador de Pokémon ----------
 // Abre o comparador (arquivo do usuário, sem alteração) numa janela própria; a ponte preenche as fichas.

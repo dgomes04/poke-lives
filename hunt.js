@@ -220,7 +220,13 @@ async function huntCheckAccount(id, manual = false) {
   let r;
   try { r = await withLock(wv, () => withDesktop(wv, () => runIn(wv, pageReadBestHunt, { mode: a.focus }))); }
   catch { r = { error: 'o jogo não respondeu' }; }
-  if (r.error) { huntStatus(id, r.error, true); blog(`${a.name}: ${r.error}.`, 'err'); return; }
+  if (r.error) {
+    // logo depois de abrir o app o jogo ainda está carregando: tenta de novo em 2 min (até 5 vezes) antes de avisar
+    st.falhas = (st.falhas || 0) + 1;
+    if (st.falhas <= 5) { st.next = Date.now() + 2 * 60e3; huntStatus(id, `${r.error} (tento de novo em 2 min)`, true); return; }
+    huntStatus(id, r.error, true); blog(`${a.name}: ${r.error}.`, 'err'); st.falhas = 0; return;
+  }
+  st.falhas = 0;
   const best = r.rows.find(x => x.ok);
   if (!best) { huntStatus(id, 'a /hunt não mostrou hunt liberada', true); blog(`${a.name}: a /hunt não mostrou nenhuma hunt liberada.`, 'err'); return; }
   if (r.current && r.current.toLowerCase() === best.name.toLowerCase()) {

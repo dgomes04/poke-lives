@@ -876,6 +876,8 @@ function buildPokeHub() {
         blog(`${a.name}: hunt ${sel.value === 'off' ? 'manual' : 'automática por ' + sel.value}.`);
         if (a.focus !== 'off' && window.huntCheckAccount) window.huntCheckAccount(a.id, true);
       };
+      // botão "Avaliar" num anúncio do Mercado: abre o Avaliador com aquele anúncio
+      wv.addEventListener('ipc-message', (ev) => { if (ev.channel === 'avaliar' && ev.args?.[0]) window.api.avaliar(ev.args[0]); });
       // a página do jogo quebrou (falta de memória, crash): recarrega
       wv.addEventListener('render-process-gone', () => {
         blog(`${a.name}: a página do jogo caiu. Recarregando.`, 'err');

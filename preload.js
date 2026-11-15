@@ -15,5 +15,6 @@ contextBridge.exposeInMainWorld('api', {
   phoneInfo: () => ipcRenderer.invoke('phone:info'),
   comparar: (conta) => ipcRenderer.invoke('comparador:abrir', conta),
   votoJanela: (conta, url, nome) => ipcRenderer.invoke('voto:janela', { conta, url, nome }),
+  avaliar: (anuncio) => ipcRenderer.invoke('avaliador:abrir', anuncio),
   login:(platform, partition) => ipcRenderer.invoke('login', { platform, partition }),
 });
