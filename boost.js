@@ -911,6 +911,7 @@ function buildPokeHub() {
         <label class="hsel" title="Troca automática de hunt (usa a extensão /hunt)">${ic('pin')}<select data-a="focus">
           <option value="off">Hunt manual</option><option value="xp">Auto: XP/h</option>
           <option value="ouro">Auto: Ouro/h</option><option value="shiny">Auto: Shiny/h</option></select></label>
+        <button class="iconbtn sm som" data-a="som"></button>
         <div class="dd"><button class="iconbtn sm" title="Opções da conta">${ic('dots')}</button>
           <div class="menu right">
             <div class="mtitle">Conta</div>
@@ -931,7 +932,7 @@ function buildPokeHub() {
       if (pokePreloadUrl) wv.setAttribute('preload', pokePreloadUrl); // injeta a /hunt
       wv.src = 'https://pokeidle.io/app';
       wv.addEventListener('dom-ready', () => {
-        wv.setAudioMuted(!!cfg.settings.mutePc);
+        pokeSom(a);
         fitPokeZoom(wv);
         if (huntExtInfo?.css) wv.insertCSS(huntExtInfo.css).catch(() => {});
       });
@@ -967,6 +968,7 @@ function buildPokeHub() {
       tile.querySelector('[data-a=compare]').onclick = () => { closeMenus(); window.api.comparar(a.id); };
       tile.querySelector('[data-a=snipeoff]').onclick = () => { closeMenus(); stopSnipe(a.id); };
       tile.querySelector('[data-a=full]').onclick = () => { closeMenus(); setPokeFull(tile.classList.contains('full') ? null : tile); };
+      tile.querySelector('[data-a=som]').onclick = () => { a.som = !pokeSomLigado(a); save(); pokeSom(a); };
       tile.querySelector('[data-a=fullx]').onclick = () => setPokeFull(null);
       tile.querySelector('[data-a=zoom]').onclick = () => {
         const s = cfg.settings;
@@ -988,11 +990,21 @@ function buildPokeHub() {
     tile.querySelector('.star').innerHTML = isMain ? ic('star') : '';
     tile.querySelector('[data-a=main]').hidden = isMain;
     tile.querySelector('[data-a=snipeoff]').hidden = !a.snipe;
+    pokeSom(a);
   });
   renderSnipeMenu();
   pokeWv = pokeViews[cfg.settings.pokeMain] || null;
   $('pokeAdd').hidden = accs.length >= MAX_ACCOUNTS; // já tem 4 contas (o máximo do jogo): some
   applyPokeLayout();
+}
+
+// som de cada conta: o botão da barra manda; quem nunca clicou segue o "Mudo no PC"
+function pokeSomLigado(a) { return a.som === undefined ? !cfg.settings.mutePc : !!a.som; }
+function pokeSom(a) {
+  const wv = pokeViews[a.id], on = pokeSomLigado(a);
+  try { wv?.setAudioMuted(!on); } catch { /* webview ainda não pronta: o dom-ready aplica */ }
+  const b = wv?.closest('.ptile')?.querySelector('[data-a=som]');
+  if (b) { b.innerHTML = ic(on ? 'vol' : 'volOff'); b.classList.toggle('on', on); b.title = on ? 'Som ligado nesta conta (clique pra deixar mudo)' : 'Conta muda (clique pra ligar o som)'; }
 }
 
 // ---------- comparador: os Pokémon de cada conta, com os dados que a ficha pede ----------
@@ -1115,7 +1127,7 @@ function addPokeAccount() {
   $('pokeLight').onchange = () => { cfg.settings.pokeLight = $('pokeLight').checked; save(); $('poke').classList.toggle('leve', cfg.settings.pokeLight); };
   cfg.settings.pokeAccounts ||= [{ id: 'poke', name: 'Principal' }]; // 'poke' = login que você já fez
   cfg.settings.pokeMain ||= cfg.settings.pokeAccounts[0].id;
-  $('mutePc').addEventListener('change', () => Object.values(pokeViews).forEach(w => w.setAudioMuted(!!cfg.settings.mutePc)));
+  $('mutePc').addEventListener('change', () => cfg.settings.pokeAccounts.forEach(pokeSom));
   try {
     pokePreloadUrl = (await window.api.paths()).pokePreload;
     huntExtInfo = await window.api.huntExtInfo();

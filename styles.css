@@ -424,3 +424,6 @@ button.ghost:hover { color: var(--text); background: var(--card2); }
 #snipeBox .sn-erro { color: var(--err); font-size: 12px; }
 #snipeBox .sn-erro:empty { display: none; }
 #snipeBox .sn-acoes { display: flex; justify-content: flex-end; gap: 8px; }
+
+.ptile .tbar .som { flex: none; color: var(--muted); }
+.ptile .tbar .som.on { color: var(--accent-2); background: var(--accent-bg); }
