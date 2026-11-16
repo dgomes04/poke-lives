@@ -107,30 +107,37 @@ async function pageSnipeScan({ ciclo, regras }) {
   }
   return { achados, ritmo, adiados };
 
-  // preço de mercado de um item: vendas dos últimos 30 dias (Tabela de preços), cache de 10 min
+  // preço de mercado de um item: as vendas recentes de itens (a busca por nome é ignorada pelo servidor nos
+  // itens, então lê até 8 páginas das vendas de todos os itens, uma vez a cada 10 min, e filtra pelo nome)
   async function pageSnipePrecoItem(r) {
-    const c = (window.__plPrecoItem ||= new Map()), k = r.itemId + ':' + r.moeda, v = c.get(k);
-    if (v && Date.now() - v.em < 10 * 60e3) return v.r;
-    const precos = [];
-    for (let pg = 0; pg < 2; pg++) {
+    // uma página por rodada (8 de uma vez fazem o servidor pedir calma); recomeça a cada 10 min
+    let h = window.__plHistItens;
+    if (!h || Date.now() - h.em > 10 * 60e3) h = window.__plHistItens = { em: Date.now(), pg: 0, fim: false, linhas: [], ids: new Set() };
+    if (!h.fim && h.pg < 8 && h.rodada !== ciclo) {
+      h.rodada = ciclo;
       const seq = 800000 + Math.floor(Math.random() * 90000);
       const resp = S.esperar(x => x.t === 'market' && x.aba === 'historicoGlobal' && (x.seq == null || x.seq === seq), 4000);
-      S.enviar({ t: 'market.historicoGlobal', pagina: pg, seq, tipo: 'item', busca: r.alvo });
+      S.enviar({ t: 'market.historicoGlobal', pagina: h.pg, seq, tipo: 'item', busca: '' });
       const x = await resp;
-      if (!x) break;
-      for (const l of x.linhas || []) {
-        const id = Number(l.itemId || (l.ficha && l.ficha.itemId) || 0);
-        if (id !== Number(r.itemId) || moedaDe(l.moeda) !== r.moeda) continue;
-        const q = Number(l.qtd || (l.ficha && l.ficha.qtd) || 1) || 1;
-        const unit = Number(l.preco) || Number(l.bruto) / q;
-        if (unit > 0) precos.push(unit);
+      if (x) {
+        for (const l of x.linhas || []) if (!h.ids.has(l.id)) { h.ids.add(l.id); h.linhas.push(l); }
+        h.pg++;
+        if (!x.temMais) h.fim = true;
       }
-      if (!x.temMais) break;
+    }
+    // a venda vem como descricao "12× Leaf Stone" e bruto = total pago (sem o id do item)
+    const alvo = String(r.alvo || '').toLowerCase().trim(), precos = [];
+    for (const l of h.linhas) {
+      if (l.tipo !== 'item' || moedaDe(l.moeda) !== r.moeda) continue;
+      const d = String(l.descricao || '').match(/^\s*([\d.]+)\s*[×x*]\s*(.+?)\s*$/i);
+      const id = Number(l.itemId || (l.ficha && l.ficha.itemId) || 0);
+      if (id ? id !== Number(r.itemId) : !(d && d[2].toLowerCase() === alvo)) continue;
+      const q = d ? Number(d[1].replace(/\./g, '')) || 1 : Number(l.qtd) || 1;
+      const unit = Number(l.bruto) / q;
+      if (unit > 0) precos.push(unit);
     }
     precos.sort((a, b) => a - b);
-    const out = precos.length ? { justo: precos[Math.floor(precos.length / 2)], n: precos.length } : { semVendas: true, n: 0 };
-    c.set(k, { em: Date.now(), r: out });
-    return out;
+    return precos.length ? { justo: precos[Math.floor(precos.length / 2)], n: precos.length } : { semVendas: true, n: 0 };
   }
 }
 
@@ -277,12 +284,11 @@ async function snipeTick() {
     snipe.rodando = true;
     snipe.leitor = leitor;
     // limites do dia: regra de item que já bateu a quantidade do dia, ou conta sem teto sobrando naquela moeda
-    const dia = snipeDia();
     const regras = ativas.filter(r => {
-      const c = s.contas[r.conta], g = snipeGasto(r.conta);
+      const c = s.contas[r.conta], { g, regras: porRegra } = snipeContadores(r.conta, c.modo === 'ensaio');
       const teto = r.moeda === 'gold' ? Number(c.tetoOuro) : Number(c.tetoGemas);
-      if (c.modo === 'on' && teto > 0 && g[r.moeda] >= teto) return false;
-      if (r.tipo === 'item' && r.qtdDia > 0 && (dia.regras[r.id] || 0) >= r.qtdDia) return false;
+      if (teto > 0 && g[r.moeda] >= teto) return false;
+      if (r.tipo === 'item' && r.qtdDia > 0 && (porRegra[r.id] || 0) >= r.qtdDia) return false;
       return true;
     });
     if (!regras.length) return;
@@ -320,41 +326,67 @@ function snipeDescPreco(a, qtd) {
   return a.tipo === 'item' ? `${unit} cada · ${snipeFmt(a.preco * qtd, a.moeda)} no total${merc}` : unit + merc;
 }
 
+// contadores do dia: os de verdade (Comprando) e os simulados (Ensaio), pra o ensaio mostrar o que os tetos deixariam passar
+function snipeContadores(conta, ensaio) {
+  const dia = snipeDia();
+  if (!ensaio) return { g: snipeGasto(conta), regras: dia.regras, avisado: dia.limiteAvisado };
+  const e = (dia.ensaio ||= { contas: {}, regras: {}, avisado: {} });
+  return { g: (e.contas[conta] ||= { gold: 0, orb: 0 }), regras: e.regras, avisado: e.avisado };
+}
+
 async function snipeAgir(r, a) {
-  const s = snipeCfg(), c = s.contas[r.conta], dia = snipeDia(), g = snipeGasto(r.conta);
+  const s = snipeCfg(), c = s.contas[r.conta], ensaio = c.modo === 'ensaio';
+  const { g, regras: porRegra, avisado } = snipeContadores(r.conta, ensaio);
   // quantidade: o anúncio, o máximo por compra e o que falta do dia
-  let qtd = a.qtd || 1;
+  let qtd = a.qtd || 1, motivo = '';
   if (r.tipo === 'item') {
     if (r.qtdCompra > 0) qtd = Math.min(qtd, r.qtdCompra);
-    if (r.qtdDia > 0) qtd = Math.min(qtd, r.qtdDia - (dia.regras[r.id] || 0));
+    if (r.qtdDia > 0) { qtd = Math.min(qtd, r.qtdDia - (porRegra[r.id] || 0)); if (qtd <= 0) motivo = 'regra'; }
   }
   const teto = r.moeda === 'gold' ? Number(c.tetoOuro) : Number(c.tetoGemas);
-  if (c.modo === 'on' && teto > 0) qtd = Math.min(qtd, Math.floor((teto - g[r.moeda]) / a.preco));
-  const desc = snipeDescAnuncio({ ...a, qtd: Math.max(qtd, 1) });
+  const desc0 = snipeDescAnuncio({ ...a, qtd: Math.max(qtd, 1) });
+  if (teto > 0 && !motivo) {
+    const sobra = teto - g[r.moeda];
+    // um anúncio mais caro do que sobra do teto: pula só ele (o teto não acabou)
+    if (sobra > 0 && a.preco > sobra) {
+      snipeHist(r.conta, 'LIMITE', `${ensaio ? '(ensaio) ' : ''}${desc0}`, `custa ${snipeFmt(a.preco, a.moeda)}, mais do que sobra do teto de hoje (${snipeFmt(sobra, a.moeda)}) · pulei`, a.vendedor);
+      return;
+    }
+    qtd = Math.min(qtd, Math.floor(sobra / a.preco));
+    if (qtd <= 0) motivo = 'teto';
+  }
+  const desc = desc0;
   if (qtd <= 0) {
-    const k = r.conta + ':' + r.moeda;
-    if (!dia.limiteAvisado[k]) {
-      dia.limiteAvisado[k] = true;
-      snipeHist(r.conta, 'LIMITE', `Teto de ${r.moeda === 'gold' ? 'ouro' : 'gemas'} do dia atingido`, `${desc} custava ${snipeFmt(a.preco, a.moeda)} · regras dessa moeda pausadas até 00:00`);
+    const k = motivo === 'regra' ? 'r:' + r.id : r.conta + ':' + r.moeda;
+    if (!avisado[k]) {
+      avisado[k] = true;
+      const pre = ensaio ? '(ensaio) ' : '';
+      if (motivo === 'regra') snipeHist(r.conta, 'LIMITE', `${pre}${r.alvo}: ${r.qtdDia} do dia atingidos`, 'regra pausada até 00:00');
+      else snipeHist(r.conta, 'LIMITE', `${pre}Teto de ${r.moeda === 'gold' ? 'ouro' : 'gemas'} do dia atingido`, `${desc} custava ${snipeFmt(a.preco, a.moeda)} · regras dessa moeda pausadas até 00:00`);
     }
     return;
   }
-  if (c.modo === 'ensaio') {
+  // reserva antes de disparar (duas compras seguidas não furam o teto)
+  const reserva = a.preco * qtd;
+  g[r.moeda] += reserva;
+  if (r.tipo === 'item') porRegra[r.id] = (porRegra[r.id] || 0) + qtd;
+  if (ensaio) {
     snipeHist(r.conta, 'ENSAIO', desc, `teria comprado por ${snipeDescPreco(a, qtd)}`, a.vendedor);
     return;
   }
-  if (c.modo !== 'on' || !snipeLogada(r.conta)) return;
-  // reserva o gasto antes de disparar (duas compras ao mesmo tempo não furam o teto)
-  const reserva = a.preco * qtd;
-  g[r.moeda] += reserva;
-  if (r.tipo === 'item') dia.regras[r.id] = (dia.regras[r.id] || 0) + qtd;
-  let res;
-  try { res = await runIn(pokeViews[r.conta], pageSnipeComprar, { id: a.id, qtd, preco: a.preco, moeda: a.moeda, compravelEm: a.compravelEm }, 150e3); }
-  catch { res = { erro: 'o jogo não respondeu' }; }
-  const devolver = () => { g[r.moeda] -= reserva; if (r.tipo === 'item') dia.regras[r.id] -= qtd; };
+  if (c.modo !== 'on' || !snipeLogada(r.conta)) { g[r.moeda] -= reserva; if (r.tipo === 'item') porRegra[r.id] -= qtd; return; }
+  // uma compra por vez em cada conta (a confirmação do jogo não diz de qual anúncio é)
+  const fila = (snipe.filas ||= {});
+  const vez = (fila[r.conta] || Promise.resolve()).then(async () => {
+    try { return await runIn(pokeViews[r.conta], pageSnipeComprar, { id: a.id, qtd, preco: a.preco, moeda: a.moeda, compravelEm: a.compravelEm }, 150e3); }
+    catch { return { erro: 'o jogo não respondeu' }; }
+  });
+  fila[r.conta] = vez.catch(() => null);
+  const res = await vez;
+  const devolver = () => { g[r.moeda] -= reserva; if (r.tipo === 'item') porRegra[r.id] -= qtd; };
   if (res.ok || res.semResposta) {
     const q = res.qtd || qtd;
-    if (q < qtd) { g[r.moeda] -= a.preco * (qtd - q); if (r.tipo === 'item') dia.regras[r.id] -= qtd - q; }
+    if (q < qtd) { g[r.moeda] -= a.preco * (qtd - q); if (r.tipo === 'item') porRegra[r.id] -= qtd - q; }
     const d = snipeDescAnuncio({ ...a, qtd: q });
     const parcial = r.tipo === 'item' && q < (a.qtd || 1) ? ` de ${a.qtd}` : '';
     snipeHist(r.conta, 'COMPRA', d + parcial, snipeDescPreco(a, q) + (res.semResposta ? ' · o jogo não confirmou, confira o depósito' : ''), a.vendedor);
