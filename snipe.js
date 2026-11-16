@@ -531,8 +531,18 @@ async function snipeEditor(regra) {
   const ed = $('snEditor');
   ed.hidden = false;
   const seg = (nome, ops, val) => `<span class="sn-seg" data-campo="${nome}">${ops.map(([v, t]) => `<span data-v="${v}" class="${String(val) === String(v) ? 'on' : ''}">${t}</span>`).join('')}</span>`;
+  // opções do campo Alvo (atualiza sem redesenhar o editor, pra não tirar o foco de quem está digitando)
+  const preencherLista = () => {
+    const el = $('snLista');
+    if (!el) return;
+    const lista = r.tipo === 'pokemon' ? (snipe.especies || []).map(e => e.n) : snipeItensRmt().map(i => i.n);
+    el.innerHTML = lista.map(n => `<option value="${snipeEsc(n)}">`).join('');
+  };
   const desenhar = () => {
     const pk = r.tipo === 'pokemon', ouro = r.moeda === 'gold';
+    // guarda o campo em foco (e o cursor) pra devolver depois de redesenhar
+    const ativo = ed.contains(document.activeElement) && document.activeElement.id ? document.activeElement : null;
+    const foco = ativo && { id: ativo.id, ini: ativo.selectionStart, fim: ativo.selectionEnd };
     ed.innerHTML = `
       <div class="sn-row-head"><b>${regra ? 'Editar regra' : 'Nova regra'} · ${snipeEsc(accName(id))}</b></div>
       <div class="sn-grid">
@@ -560,15 +570,26 @@ async function snipeEditor(regra) {
       <div class="muted" id="snFaixa"></div>
       <div class="sn-erro" id="snErro"></div>
       <div class="sn-acoes"><button id="snCancelar">Cancelar</button><button class="accent" id="snSalvar">Salvar regra</button></div>`;
-    // listas do campo Alvo
-    const lista = pk ? (snipe.especies || []).map(e => e.n) : snipeItensRmt().map(i => i.n);
-    $('snLista').innerHTML = lista.map(n => `<option value="${snipeEsc(n)}">`).join('');
-    ed.querySelectorAll('.sn-seg[data-campo] span').forEach(b => b.onclick = () => { ler(); r[b.parentElement.dataset.campo] = b.dataset.v; if (b.parentElement.dataset.campo === 'tipo') r.alvo = ''; desenhar(); });
+    preencherLista();
+    ed.querySelectorAll('.sn-seg[data-campo] span').forEach(b => b.onclick = () => {
+      ler();
+      const campo = b.parentElement.dataset.campo;
+      if (r[campo] === b.dataset.v) return;
+      r[campo] = b.dataset.v;
+      if (campo === 'tipo') r.alvo = '';
+      if (campo === 'moeda') r.max = 0; // ouro e gemas têm escalas diferentes: o valor não passa de um pro outro
+      desenhar();
+      if (campo === 'moeda' || campo === 'modo') $('snMax')?.focus();
+    });
     ed.querySelectorAll('[data-atalho]').forEach(b => b.onclick = (e) => { e.preventDefault(); r.max = Number(b.dataset.atalho); $('snMax').value = ouro ? r.max.toLocaleString('pt-BR') : r.max; resumo(); });
     ed.querySelectorAll('input').forEach(i => i.oninput = () => { ler(); resumo(); });
     $('snAlvo').onchange = () => { ler(); faixa(); };
     $('snCancelar').onclick = () => { ed.hidden = true; snipe.editando = null; };
     $('snSalvar').onclick = salvar;
+    if (foco) {
+      const el = $(foco.id);
+      if (el) { el.focus(); try { if (foco.ini != null) el.setSelectionRange(foco.ini, foco.fim); } catch { /* checkbox */ } }
+    }
     resumo(); faixa();
   };
   const ler = () => {
@@ -654,7 +675,7 @@ async function snipeEditor(regra) {
     const ids = await runIn(pokeViews[leitor], pageSnipeItensMercado, null, 15e3).catch(() => null);
     if (ids && ids.length) { snipe.itensLidos = true; cfg.snipeItensVistos = [...new Set([...(cfg.snipeItensVistos || []), ...ids])]; save(); }
   }
-  if (snipe.editando === r && !ed.hidden) { ler(); desenhar(); }
+  if (snipe.editando === r && !ed.hidden) preencherLista();
 }
 // itens que já apareceram à venda no Mercado da Comunidade (sem a lista ainda, o catálogo inteiro)
 function snipeItensRmt() {

@@ -218,6 +218,12 @@ app.whenReady().then(async () => {
             const png = out ? Buffer.from(String(out).split(',')[1], 'base64') : (await alvo.webContents.capturePage()).toPNG();
             fs.writeFileSync(file, png); out = file;
           } else if (req.url.startsWith('/cmp')) out = await comparadorWin?.webContents.executeJavaScript(body); // janela do comparador
+          else if (req.url.startsWith('/input')) { // teste: clique/tecla de verdade na janela principal
+            const evs = JSON.parse(body || '[]');
+            win.focus(); win.webContents.focus();
+            for (const ev of evs) { win.webContents.sendInputEvent(ev); await new Promise(r => setTimeout(r, ev.type === 'char' ? 40 : 120)); }
+            out = evs.length;
+          }
           else if (req.url.startsWith('/janela')) { // outra janela do app, pelo título (?t=...)
             const t = decodeURIComponent((req.url.match(/[?&]t=([^&]+)/) || [])[1] || '');
             out = await BrowserWindow.getAllWindows().find(w => w.getTitle().includes(t))?.webContents.executeJavaScript(body);
