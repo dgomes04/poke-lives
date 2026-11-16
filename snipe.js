@@ -414,7 +414,8 @@ function snipeAbrir() {
       <div class="sn-contas" id="snContas"></div>
       <div class="sn-card" id="snDetalhe"></div>
       <div class="sn-card" id="snEditor" hidden></div>
-      <div class="sn-card"><div class="sn-row-head"><b>Histórico</b><span id="snFiltros"></span><span class="muted" id="snHistSub"></span></div><div id="snHist"></div></div>`;
+      <div class="sn-card"><div class="sn-row-head"><b>Histórico</b><span id="snFiltros"></span><span class="muted" id="snHistSub"></span></div><div id="snHist"></div></div>
+      <div class="sn-card" id="snRotom"></div>`;
     document.body.appendChild(box);
     $('snFechar').onclick = () => { box.hidden = true; };
   }
@@ -422,7 +423,25 @@ function snipeAbrir() {
   box.hidden = false;
   snipeRender();
 }
-function snipeRender() { snipeRenderContas(); snipeRenderDetalhe(); snipeRenderHist(); }
+function snipeRender() { snipeRenderContas(); snipeRenderDetalhe(); snipeRenderHist(); snipeRenderRotom(); }
+
+// Rotom Sniper (a extensão antiga): ligar, abrir o Cockpit ou desligar em cada conta
+function snipeRenderRotom() {
+  const el = $('snRotom');
+  if (!el) return;
+  el.innerHTML = `<div class="sn-row-head"><b>Rotom Sniper</b><span class="muted">a extensão antiga, conta por conta</span></div>` +
+    cfg.settings.pokeAccounts.map(a => `<div class="sn-regra" data-id="${a.id}">
+      <span class="sn-regra-txt"><b>${snipeEsc(a.name)}</b></span>
+      <span class="sn-pill ${a.snipe ? 'ok' : 'off'}">${a.snipe ? 'ligado' : 'desligado'}</span>
+      <button data-a="abrir">${ic('external')} ${a.snipe ? 'Abrir Cockpit' : 'Ligar e abrir'}</button>
+      ${a.snipe ? `<button data-a="desligar">${ic('x')} Desligar</button>` : ''}</div>`).join('');
+  el.querySelectorAll('.sn-regra').forEach(row => {
+    const id = row.dataset.id;
+    row.querySelector('[data-a=abrir]').onclick = async () => { await openSnipe(id); snipeRender(); };
+    const off = row.querySelector('[data-a=desligar]');
+    if (off) off.onclick = async () => { await stopSnipe(id); snipeRender(); };
+  });
+}
 
 function snipeRenderContas() {
   const s = snipeCfg();
@@ -453,7 +472,7 @@ function snipeRenderDetalhe() {
     <div class="sn-row-head"><b>Regras de ${snipeEsc(conta.name)}</b>
       <span class="sn-seg" id="snModo">${modoBtn('off', 'Desligado')}${modoBtn('ensaio', 'Ensaio')}${modoBtn('on', 'Comprando')}</span>
       <button id="snNova">${ic('plus')} Regra</button></div>
-    ${conta.snipe ? `<div class="sn-aviso">${ic('alert')} O Rotom Sniper também está ligado nesta conta. Desligue ele (menu da conta → Desligar snipe) pra os dois não disputarem o mesmo anúncio.</div>` : ''}
+    ${conta.snipe ? `<div class="sn-aviso">${ic('alert')} O Rotom Sniper também está ligado nesta conta. Desligue ele em "Rotom Sniper", no fim deste painel, pra os dois não disputarem o mesmo anúncio.</div>` : ''}
     <div class="sn-tetos"><label>Teto de ouro por dia <input id="snTetoOuro" value="${c.tetoOuro ? snipeFmt(c.tetoOuro, 'gold') : ''}" placeholder="sem teto"></label>
       <label>Teto de gemas por dia <input id="snTetoGemas" value="${c.tetoGemas || ''}" placeholder="sem teto"></label>
       <span class="muted">as regras de cima têm prioridade quando duas servem pro mesmo anúncio</span></div>
