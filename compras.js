@@ -1,8 +1,11 @@
 // Compra automática de Ultra Ball (com ouro, no Market do NPC): quando a captura automática usa Ultra Ball
-// e ela ACABA (zero), o app abre Market → Pokebolas → Ultra Ball → Máx → Comprar.
+// e ela chega a 1.500 ou menos, o app abre Market → Pokebolas → Ultra Ball → Máx → Comprar.
 // Só Ultra Ball e só com ouro; nada é comprado com diamante ou gema.
 
+const ULTRA_LIMITE = 1500;         // compra quando sobrar isso ou menos
+const ULTRA_MIN_COMPRA = 1000;     // ainda com bolas, só compra se o ouro der pra pelo menos isso (senão espera zerar)
 const ULTRA_ESPERA = 15 * 60e3;    // se a compra falhar, tenta de novo depois de 15 min
+const ULTRA_ESPERA_POUCO = 60 * 60e3; // ouro curto com bolas sobrando: olha de novo em 1h
 const ULTRA_ESPERA_OK = 2 * 60e3;  // depois de comprar, dá tempo do jogo atualizar o estoque
 const ultraUltima = {};            // id -> quando tentou
 
@@ -52,6 +55,8 @@ async function pageComprarUltra(opts) {
   const max = atalhos.find(b => /m[aá]x/i.test(b.textContent || '')) || atalhos[atalhos.length - 1];
   const qtd = Number(max?.dataset.q || 0);
   if (!max || max.disabled || !(qtd > 0)) { await fechar(); return { error: 'sem ouro pra comprar Ultra Ball' }; }
+  const minimo = Number(opts && opts.minimo) || 0;
+  if (qtd < minimo) { await fechar(); return { error: `o ouro só dá ${qtd} Ultra Balls`, pouco: true, qtd }; }
   max.click();
   await wait(300);
   const comprar = card.querySelector('.mk-pal-comprar');
@@ -68,19 +73,27 @@ async function pageComprarUltra(opts) {
 async function verificarUltra(id, i) {
   if (cfg.settings.autoUltra === false || !i || !i.bolas || i.login || i.outra || !i.autoBola) return;
   const ultra = i.bolas.find(b => /^ultra ?ball$/i.test(b.nome || ''));
-  if (!ultra || !ultra.usa || ultra.qtd > 0) return; // só quando acabar
+  if (!ultra || !ultra.usa || !(ultra.qtd <= ULTRA_LIMITE)) return; // só quando sobrar 1.500 ou menos
   const u = ultraUltima[id];
-  if (u && Date.now() - u.t < (u.ok ? ULTRA_ESPERA_OK : ULTRA_ESPERA)) return;
+  const espera = u && (u.ok ? ULTRA_ESPERA_OK : u.pouco ? ULTRA_ESPERA_POUCO : ULTRA_ESPERA);
+  // ouro curto: se as bolas zerarem, compra o que der na hora
+  if (u && Date.now() - u.t < espera && !(u.pouco && ultra.qtd === 0)) return;
   ultraUltima[id] = { t: Date.now(), ok: false };
   const wv = pokeViews[id];
   if (!wv) return;
+  // com bolas sobrando, só vale se o ouro comprar um lote de verdade (não gasta o ouro todo em compras picadas)
+  const minimo = ultra.qtd > 0 ? ULTRA_MIN_COMPRA : 0;
   let r;
-  try { r = await withLock(wv, () => withDesktop(wv, () => runIn(wv, pageComprarUltra, null, 60e3))); }
+  try { r = await withLock(wv, () => withDesktop(wv, () => runIn(wv, pageComprarUltra, { minimo }, 60e3))); }
   catch { r = { error: 'o jogo não respondeu' }; }
   if (r.ok) {
     ultraUltima[id].ok = true;
-    blog(`${accName(id)}: as Ultra Balls acabaram. Comprei ${r.qtd.toLocaleString('pt-BR')} no Market (${r.gasto || 'ouro'}).`, 'ok', 'conta');
+    const motivo = ultra.qtd > 0 ? `restavam ${ultra.qtd.toLocaleString('pt-BR')} Ultra Balls` : 'as Ultra Balls acabaram';
+    blog(`${accName(id)}: ${motivo}. Comprei ${r.qtd.toLocaleString('pt-BR')} no Market (${r.gasto || 'ouro'}).`, 'ok', 'conta');
     if (window.statsCompra) statsCompra(accName(id), 'Ultra Ball', r.qtd);
+  } else if (r.pouco) {
+    ultraUltima[id].pouco = true;
+    blog(`${accName(id)}: restam ${ultra.qtd.toLocaleString('pt-BR')} Ultra Balls, mas ${r.error}. Espero juntar ouro (ou zerar) pra comprar.`, '', 'conta');
   } else {
     blog(`${accName(id)}: não deu pra comprar Ultra Ball (${r.error}). Tento de novo em 15 min.`, 'err', 'conta');
   }

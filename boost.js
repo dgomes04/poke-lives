@@ -8,6 +8,7 @@ const BOOSTS = {
 const CHECK_MIN = 5;          // conferir a cada 5 min
 const ATTEMPT_WAIT = 8 * 60e3; // depois de resgatar, espera o PokeIdle atualizar
 const CHANNEL_BLOCK = 30 * 60e3;
+const RENOVAR = 15 * 60;      // segundos: com 15 min ou menos restando, o boost já pode ser resgatado de novo
 
 let pokeWv = null, boostState = { twitch: null, kick: null, at: null }, boostBusy = false, boostTimer = null;
 const attempts = {};  // 'twitch:xp' -> { at, channelKey }
@@ -392,7 +393,8 @@ async function boostCycle(manual = false) {
       for (const k of Object.keys(BOOSTS)) {
         const a = attempts[p + ':' + k];
         if (!a || !a.channelKey) continue;
-        const active = list.find(x => typeOf(x.name) === k && x.time);
+        // conta como resgatado só se passou dos 15 min (o resgate soma ao tempo que ainda restava)
+        const active = list.find(x => typeOf(x.name) === k && parseTime(x.time) > RENOVAR);
         if (active) { blog(`${BOOSTS[k].label} na ${platName(p)} ativo: ${active.time}.`, 'ok'); delete attempts[p + ':' + k]; }
         else if (Date.now() - a.at > ATTEMPT_WAIT) {
           blog(`O resgate em ${a.channel} não apareceu no PokeIdle. Pausando esse canal por 30 min.`, 'err');
@@ -407,7 +409,7 @@ async function boostCycle(manual = false) {
       if (!naOutland) outlandAvisado = false;
       // acabados e marcados, do mais barato pro mais caro
       const expired = Object.keys(BOOSTS)
-        .filter(k => s[k] && !list.find(x => typeOf(x.name) === k && x.time))
+        .filter(k => s[k] && !list.find(x => typeOf(x.name) === k && parseTime(x.time) > RENOVAR)) // acabou ou faltam 15 min
         .filter(k => !(naOutland && (k === 'lure' || k === 'capture')))
         .filter(k => !(attempts[p + ':' + k] && Date.now() - attempts[p + ':' + k].at < ATTEMPT_WAIT))
         .sort((a, b) => BOOSTS[a].cost - BOOSTS[b].cost);
