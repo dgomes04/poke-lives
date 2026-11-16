@@ -400,6 +400,9 @@ async function pageTileInfo() {
       };
       walk(m, 0);
       window.__plAreas = areas;
+      const hunts = {}; // slug -> nome e nível (pra mostrar a hunt mesmo com o jogo em Ultra)
+      for (const h of (Array.isArray(m.hunts) ? m.hunts : [])) if (h && h.slug) hunts[h.slug] = { nome: h.nome || h.name || h.titulo || null, nivel: h.nivel ?? h.level ?? null };
+      window.__plHunts = hunts;
       if (Array.isArray(m.catalogoBolas)) window.__plBolas = m.catalogoBolas.map(b => ({ id: b.id, nome: b.nome || b.name || ('Bola ' + b.id) }));
     });
   }
@@ -408,6 +411,9 @@ async function pageTileInfo() {
   const pk = (eu.pokemons || []).find(p => p.id === eu.activeId);
   const leafs = () => [...document.querySelectorAll('body *')].filter(e => e.children.length === 0 && vis(e));
   const huntLeaf = leafs().find(e => /^.+ · nível \d+$/.test(e.textContent.trim()));
+  const ultra = document.documentElement.classList.contains('modo-ultra');
+  const uLinha = (k) => { const el = document.querySelector(`#ultra [data-u="${k}"]`); return el ? [el.querySelector('b')?.textContent || '', el.querySelector('small')?.textContent || ''] : null; };
+  const huntUltra = (() => { const h = eu.huntSlug && window.__plHunts?.[eu.huntSlug]; return h && h.nome ? `${h.nome}${h.nivel != null ? ` (${h.nivel})` : ''}` : null; })();
   const card = document.getElementById('ativo-card');
   const pkTxt = card && card.innerText.match(/^\s*(\S+)[\s\S]*?Nv\s*(\d+)/);
   const login = !!leafs().find(e => /^LOGAR$/i.test(e.textContent.trim()));
@@ -425,11 +431,16 @@ async function pageTileInfo() {
   const kpis = [...document.querySelectorAll('.eco-kpi')].map(k => k.innerText.split('\n').map(x => x.trim()).filter(Boolean)).filter(k => k.length);
   // tempo da sessão: "3:18:30 caçando" (não confundir com o relógio do evento, que também é h:mm:ss)
   const sess = leafs().find(e => /^\d+:\d{2}:\d{2}$/.test(e.textContent.trim()) && /ca[çc]ando/i.test(e.parentElement?.innerText || ''));
+  if (ultra) { // no Ultra a tela do jogo some: os números vêm da caixa dele
+    const x = [['XP TREINADOR', 'xpTreinador'], ['XP POKEMON', 'xpPokemon'], ['LUCRO LÍQUIDO', 'gold']].map(([r, k]) => { const v = uLinha(k); return v ? [r, ...v] : null; }).filter(Boolean);
+    kpis.splice(0, kpis.length, ...x);
+  }
   return {
+    ultra,
     kpis,
     session: sess ? sess.textContent.trim() : null,
-    shinySeen: shinySlot(/vistos/i),
-    shinyCaught: shinySlot(/capturados|pegos/i),
+    shinySeen: ultra ? Number(document.querySelector('#ultra [data-u="shiniesVistos"]')?.textContent.replace(/\D/g, '') || 0) : shinySlot(/vistos/i),
+    shinyCaught: ultra ? Number(document.querySelector('#ultra [data-u="shinies"]')?.textContent.replace(/\D/g, '') || 0) : shinySlot(/capturados|pegos/i),
     tx: firstNum(eu, ['xp', 'exp', 'experiencia', 'xpTotal']),
     px: firstNum(pk, ['xp', 'exp', 'experiencia', 'xpTotal']),
     reconn,
@@ -437,7 +448,7 @@ async function pageTileInfo() {
     tlvl: eu.level ?? eu.nivel ?? eu.lvl ?? null,
     pk: pk ? pk.nome : (pkTxt ? pkTxt[1] : null),
     plvl: pk ? pk.level : (pkTxt ? +pkTxt[2] : null),
-    hunt: huntLeaf ? huntLeaf.textContent.trim().replace(/ · nível (\d+)$/, ' ($1)') : null,
+    hunt: huntLeaf ? huntLeaf.textContent.trim().replace(/ · nível (\d+)$/, ' ($1)') : huntUltra,
     login, outra,
     area, outland: area === 'outland',
     // pokémon em campo e o estoque que a automação usa pra levantar ele (só leitura; nada é comprado)
@@ -526,9 +537,9 @@ const shinyLast = {};
 function shinyCheck(id, i) {
   if (!i || i.login || i.outra) return;
   const prev = shinyLast[id];
-  const cur = { seen: i.shinySeen, caught: i.shinyCaught, hunt: i.hunt };
+  const cur = { seen: i.shinySeen, caught: i.shinyCaught, hunt: i.hunt, ultra: !!i.ultra };
   shinyLast[id] = cur;
-  if (!prev) return; // primeira leitura: só guarda
+  if (!prev || prev.ultra !== cur.ultra) return; // primeira leitura, ou trocou entre normal e Ultra (contadores diferentes): só guarda
   const name = accName(id), onde = i.hunt ? ` em ${i.hunt}` : '';
   if (cur.caught != null && prev.caught != null && cur.caught > prev.caught) {
     const n = cur.caught - prev.caught;
@@ -840,7 +851,7 @@ function buildPokeHub() {
     if (!tile) {
       tile = document.createElement('div');
       tile.className = 'ptile';
-      tile.innerHTML = `<div class="tbar"><span class="sdot"></span><span class="star"></span><input title="Nome da conta (clique pra renomear)"><span class="tinfo">carregando…</span>
+      tile.innerHTML = `<div class="tbar"><span class="sdot"></span><span class="star"></span><input title="Nome da conta (clique pra renomear)"><span class="ubadge">ULTRA</span><span class="tinfo">carregando…</span>
         <button class="fullExit" data-a="fullx" title="Sair da tela cheia (Esc)">Sair da tela cheia</button>
         <label class="hsel" title="Troca automática de hunt (usa a extensão /hunt)">${ic('pin')}<select data-a="focus">
           <option value="off">Hunt manual</option><option value="xp">Auto: XP/h</option>
@@ -997,6 +1008,10 @@ function fitPokeZoom(wv) {
   try { if (Math.abs(wv.getZoomFactor() - z) > 0.01) wv.setZoomFactor(z); } catch { /* ainda carregando */ }
 }
 async function withDesktop(wv, fn) {
+  if (window.comTelaDoJogo && cfg.settings.ultra) return comTelaDoJogo(wv, () => withDesktopNormal(wv, fn)); // Ultra: mostra a tela só agora
+  return withDesktopNormal(wv, fn);
+}
+async function withDesktopNormal(wv, fn) {
   desktopUsers.set(wv, (desktopUsers.get(wv) || 0) + 1);
   fitPokeZoom(wv);
   await sleep(1200); // o jogo refaz o layout

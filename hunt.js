@@ -263,7 +263,7 @@ async function huntTrySwitch(id) {
   }
   p.tries++;
   let r;
-  try { r = await withLock(wv, () => runIn(wv, pageGoHunt, { name: p.name, region: p.region })); }
+  try { r = await withLock(wv, () => (window.comTelaDoJogo ? comTelaDoJogo(wv, () => runIn(wv, pageGoHunt, { name: p.name, region: p.region })) : runIn(wv, pageGoHunt, { name: p.name, region: p.region }))); }
   catch { r = { busy: true, msg: 'o jogo não respondeu' }; }
   if (r.curou) blog(`${accName(id)}: o time estava desmaiado; curei a equipe antes de trocar de hunt.`, 'err', 'conta');
   if (r.ok) {
