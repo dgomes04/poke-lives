@@ -287,6 +287,17 @@ ipcMain.handle('avaliador:calcular', async (_e, pedido) => {
     return await phoneData(`window.avaliarNoJogo ? window.avaliarNoJogo(${JSON.stringify({ ...pedido, esp })}) : { erro: 'o app ainda está carregando' }`);
   } catch (e) { return { erro: e.message }; }
 });
+// dólar → real, pra mostrar o preço dos anúncios em R$ (atualiza a cada 6 h; sem internet, usa o último)
+let cambio = { brl: 5.4, em: 0 };
+ipcMain.handle('cambio:usdbrl', async () => {
+  if (Date.now() - cambio.em < 6 * 3600e3) return cambio.brl;
+  try {
+    const j = JSON.parse(await getText('https://economia.awesomeapi.com.br/json/last/USD-BRL'));
+    const v = Number(j?.USDBRL?.bid);
+    if (v > 1 && v < 20) cambio = { brl: v, em: Date.now() };
+  } catch { cambio.em = Date.now() - 5 * 3600e3; } // tenta de novo em 1 h
+  return cambio.brl;
+});
 let avaliadorWin = null, avaliadorPendente = null;
 function abrirAvaliador(anuncio) {
   avaliadorPendente = anuncio || null;

@@ -164,9 +164,10 @@ function render(alvo, esp, r, preco, moeda) {
     const d = preco / pj.justo - 1;
     const pct = Math.round(Math.abs(d) * 100);
     const vezes = preco / pj.justo;
-    verd = d <= -0.15 ? { cls: 'bom', txt: `Preço bom · ~${pct}% abaixo do justo` }
-      : d < 0.15 ? { cls: 'justo', txt: `Preço justo · ${d < 0 ? pct + '% abaixo' : pct + '% acima'} do estimado` }
-      : { cls: 'caro', txt: vezes >= 3 ? `Muito caro · ${n(vezes, vezes < 10 ? 1 : 0)}× o preço justo` : `Caro · ~${pct}% acima do justo` };
+    // mesma regra do selo do Mercado: abaixo da faixa = bom; dentro = no preço; acima = caro
+    verd = preco < pj.baixo ? { cls: 'bom', txt: `Abaixo do mercado · ${pct}% ${d < 0 ? 'abaixo' : 'acima'} da mediana` }
+      : preco <= pj.alto ? { cls: 'justo', txt: `No preço · ${d < 0 ? pct + '% abaixo' : pct + '% acima'} da mediana` }
+      : { cls: 'caro', txt: vezes >= 3 ? `Muito acima do mercado · ${n(vezes, vezes < 10 ? 1 : 0)}× a mediana` : `Acima do mercado · ~${pct}% acima da mediana` };
     verd.sub = `Estimado: ${fmtP(pj.justo)} (faixa ${fmtP(pj.baixo)} – ${fmtP(pj.alto)}), com base em ${pj.n} venda${pj.n === 1 ? '' : 's'} parecida${pj.n === 1 ? '' : 's'} nos últimos 30 dias${pj.outraMoeda ? ' (algumas convertidas da outra moeda)' : ''}.`;
     if (pj.n < 3) verd.sub += ' Poucas vendas: trate como estimativa fraca.';
   } else if (preco) {

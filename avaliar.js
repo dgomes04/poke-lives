@@ -3,7 +3,7 @@
 // Também lê a Tabela de preços (vendas dos últimos 30 dias da espécie). Só leitura: nada é comprado.
 
 // ---------- dentro do jogo ----------
-async function pageAvaliar({ alvo, esp: e, paginas = 5 }) {
+async function pageAvaliar({ alvo, esp: e, paginas = 4 }) { // 4 páginas, igual ao selo do Mercado
   const ver = (document.querySelector('script[src*="app.js"]')?.src.match(/v=([\w.]+)/) || [])[1] || '';
   const N = await import(`/shared/nota-pokemon.mjs${ver ? '?v=' + ver : ''}`);
   const G = await import(`/shared/ginasios.mjs${ver ? '?v=' + ver : ''}`);
