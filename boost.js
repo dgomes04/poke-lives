@@ -111,7 +111,7 @@ async function pageReadBoosts() {
 }
 
 // Twitch, fase 1: abre o mercado, acha a recompensa, abre a tela de confirmação
-async function pageTwitchPrepare({ title, cost }) {
+async function pageTwitchPrepare({ title, cost, opcoes }) {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const sumBtn = document.querySelector('[data-test-selector="community-points-summary"] button');
   if (!sumBtn) return { error: 'botão de pontos não encontrado (logado na Twitch?)' };
@@ -123,13 +123,20 @@ async function pageTwitchPrepare({ title, cost }) {
   const balance = nums.length ? Math.max(...nums) : null;
   if (balance != null && balance < cost) return { error: 'poucos pontos', balance };
   if (!document.querySelector('[class*="reward-center__content"]')) sumBtn.click();
-  let item;
+  // 1h se o canal tiver; senão o menor pacote (3h, 5h, 10h) que o saldo paga
+  let item, escolha, achou = false;
   for (let i = 0; i < 25 && !item; i++) {
     await wait(200);
-    item = [...document.querySelectorAll('[class*="rewardListItem"]')]
-      .find(e => e.innerText.split('\n').map(t => t.trim()).includes(title));
+    const lista = [...document.querySelectorAll('[class*="rewardListItem"]')];
+    for (const o of opcoes) {
+      const el = lista.find(e => e.innerText.split('\n').map(t => t.trim()).includes(o.t));
+      if (!el) continue;
+      achou = true;
+      if (balance == null || balance >= o.c) { item = el; escolha = o; break; }
+    }
   }
-  if (!item) { sumBtn.click(); return { error: 'recompensa não encontrada neste canal', balance }; }
+  if (!item) { sumBtn.click(); return { error: achou ? 'poucos pontos para os pacotes deste canal' : 'recompensa não encontrada neste canal', balance }; }
+  cost = escolha.c;
   item.querySelector('button').click();
   await wait(1500);
   const pop = document.querySelector('[class*="reward-center__content"]');
@@ -139,11 +146,11 @@ async function pageTwitchPrepare({ title, cost }) {
   if (!confirm) { sumBtn.click(); return { error: 'botão de confirmar não encontrado', balance }; }
   if (confirm.disabled) { sumBtn.click(); return { error: 'botão de resgatar desativado (pontos? limite do canal?)', balance }; }
   window.__plConfirm = confirm;
-  return { ok: true, balance, confirmText: confirm.innerText.trim() };
+  return { ok: true, balance, confirmText: confirm.innerText.trim(), horas: escolha.h, custo: escolha.c };
 }
 
 // Kick, fase 1
-async function pageKickPrepare({ title, cost }) {
+async function pageKickPrepare({ title, cost, opcoes }) {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const findPanel = () => {
     const h = [...document.querySelectorAll('*')].find(e => e.children.length === 0 && e.textContent.trim() === 'Pontos do canal' && e.offsetParent);
@@ -164,13 +171,21 @@ async function pageKickPrepare({ title, cost }) {
   if (!isNaN(balance) && balance < cost) return { error: 'poucos pontos', balance };
   let panel = findPanel();
   if (!panel) ptsBtn.click();
-  let item;
+  // 1h se o canal tiver; senão o menor pacote (3h, 5h, 10h) que o saldo paga
+  let item, escolha, achou = false;
   for (let i = 0; i < 25 && !item; i++) {
     await wait(200);
     panel = findPanel();
-    item = panel && [...panel.querySelectorAll('button')].find(b => b.innerText.split('\n').map(x => x.trim()).includes(title));
+    const lista = panel ? [...panel.querySelectorAll('button')] : [];
+    for (const o of opcoes) {
+      const el = lista.find(b => b.innerText.split('\n').map(x => x.trim()).includes(o.t));
+      if (!el) continue;
+      achou = true;
+      if (isNaN(balance) || balance >= o.c) { item = el; escolha = o; break; }
+    }
   }
-  if (!item) { ptsBtn.click(); return { error: 'recompensa não encontrada neste canal', balance }; }
+  if (!item) { ptsBtn.click(); return { error: achou ? 'poucos pontos para os pacotes deste canal' : 'recompensa não encontrada neste canal', balance }; }
+  cost = escolha.c;
   const before = new Set(document.querySelectorAll('button'));
   item.click();
   await wait(1500);
@@ -181,7 +196,7 @@ async function pageKickPrepare({ title, cost }) {
   if (confirm.disabled) { ptsBtn.click(); return { error: 'botão de resgatar desativado', balance }; }
   window.__plConfirm = confirm;
   window.__plClose = () => { if (findPanel()) ptsBtn.click(); };
-  return { ok: true, balance, confirmText: confirm.innerText.trim() };
+  return { ok: true, balance, confirmText: confirm.innerText.trim(), horas: escolha.h, custo: escolha.c };
 }
 
 // fase 2 (as duas plataformas): clica em confirmar ou cancela
@@ -259,23 +274,26 @@ async function readBoosts() {
 async function redeemOn(wv, channel, p, k, where) {
   const b = BOOSTS[k], ch = channel.name;
   let r;
-  try { r = await runIn(wv, p === 'twitch' ? pageTwitchPrepare : pageKickPrepare, { title: b.title, cost: b.cost }); }
+  // a recompensa de 1h e os pacotes (alguns canais só têm os pacotes de 3h, 5h e 10h)
+  const opcoes = [1, 3, 5, 10].map(h => ({ h, c: b.cost * h, t: h === 1 ? b.title : `${b.title} (${h}h)` }));
+  try { r = await runIn(wv, p === 'twitch' ? pageTwitchPrepare : pageKickPrepare, { title: b.title, cost: b.cost, opcoes }); }
   catch (e) { r = { error: 'a página não respondeu' }; }
   if (r.balance != null && window.setPoints) { setPoints(channel, r.balance); save(); }
   if (r.error) {
     blog(`${ch} (${platName(p)}${where}): ${r.error}${r.balance != null ? ` · saldo ${r.balance}` : ''}`, 'err');
     return 'skip';
   }
-  const text = `Resgatar ${b.label} 1h (${b.cost} pontos) no canal ${ch} da ${platName(p)}${where}? Saldo: ${r.balance ?? '?'}`;
+  const horas = r.horas || 1, custo = r.custo || b.cost;
+  const text = `Resgatar ${b.label} ${horas}h (${custo} pontos) no canal ${ch} da ${platName(p)}${where}? Saldo: ${r.balance ?? '?'}`;
   const ok = cfg.settings.boost.confirm ? await askConfirm(text) : true;
   const res = await runIn(wv, pageCommit, ok).catch(() => ({ clicked: false }));
   if (!ok) { blog(`Resgate de ${b.label} em ${ch} cancelado.`); attempts[p + ':' + k] = { at: Date.now(), channelKey: null }; return 'done'; }
   if (res.clicked) {
-    blog(`Resgatei ${b.label} 1h em ${ch} (${platName(p)}${where}). Conferindo no PokeIdle…`, 'ok');
-    notify('Boost resgatado', `${b.label} 1h em ${ch} (${platName(p)}) por ${b.cost} pontos.`, 'boost:' + Date.now(), 0);
-    if (window.statsBoost) statsBoost(b.label, ch, p, b.cost);
+    blog(`Resgatei ${b.label} ${horas}h em ${ch} (${platName(p)}${where}) por ${custo} pontos. Conferindo no PokeIdle…`, 'ok');
+    notify('Boost resgatado', `${b.label} ${horas}h em ${ch} (${platName(p)}) por ${custo} pontos.`, 'boost:' + Date.now(), 0);
+    if (window.statsBoost) statsBoost(b.label, ch, p, custo);
     attempts[p + ':' + k] = { at: Date.now(), channelKey: key(channel), channel: ch };
-    if (r.balance != null && window.setPoints) { setPoints(channel, r.balance - b.cost); save(); renderList(); }
+    if (r.balance != null && window.setPoints) { setPoints(channel, r.balance - custo); save(); renderList(); }
     return 'done';
   }
   blog(`Não consegui clicar em resgatar em ${ch}.`, 'err');
