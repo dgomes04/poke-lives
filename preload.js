@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('api', {
   comparar: (conta) => ipcRenderer.invoke('comparador:abrir', conta),
   votoJanela: (conta, url, nome) => ipcRenderer.invoke('voto:janela', { conta, url, nome }),
   avaliar: (anuncio) => ipcRenderer.invoke('avaliador:abrir', anuncio),
+  avaliadorEspecie: (q) => ipcRenderer.invoke('avaliador:especie', q),
+  snipeEspecies: () => ipcRenderer.invoke('snipe:especies'),
+  snipeItens: () => ipcRenderer.invoke('snipe:itens'),
   precificador: (p) => ipcRenderer.invoke('precificador:abrir', p),
   login:(platform, partition) => ipcRenderer.invoke('login', { platform, partition }),
 });

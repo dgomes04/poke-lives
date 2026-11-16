@@ -14,6 +14,8 @@ if (location.hostname === 'pokeidle.io') {
   })()`).catch(() => {});
   // Avaliador: guarda os anúncios de Pokémon que chegam pelo socket e põe um botão "Avaliar" nos cards
   webFrame.executeJavaScript(`(${mercadoAvaliar.toString()})()`).catch(() => {});
+  // Snipe próprio: só escuta o socket (relógio do servidor, respostas do Mercado). Nada roda até o app pedir.
+  webFrame.executeJavaScript(`(${snipeMotor.toString()})()`).catch(() => {});
   window.addEventListener('message', async (ev) => {
     if (ev.source !== window || !ev.data) return;
     if (ev.data.__plAvaliar) ipcRenderer.sendToHost('avaliar', ev.data.__plAvaliar);
@@ -153,6 +155,11 @@ function mercadoAvaliar() {
     if (!w.length) return { semVendas: true };
     return { justo: quantil(w, 0.5), baixo: quantil(w, 0.25), alto: quantil(w, 0.75), n: w.length };
   }
+  // o snipe usa as mesmas contas (preço de mercado, nota, Tabela de preços)
+  window.__plAval = {
+    modulos, especie, medir, precoDeMercado, historico,
+    historicoPronto: (id) => { const c = vendasCache.get(Number(id)); return !!(c && Date.now() - c.em < 10 * 60e3); },
+  };
 
   // ---- selo no card ----
   const cssSelo = 'display:block;margin-top:5px;padding:4px 7px;border-radius:7px;font:500 10.5px/1.35 system-ui;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;background:#2a1d33cc;color:#f3e8ff;';
@@ -221,4 +228,34 @@ function mercadoAvaliar() {
     if (agendado) return; agendado = true;
     setTimeout(() => { agendado = false; for (const c of document.querySelectorAll('.cm-card.poke')) selo(c); }, 150);
   }).observe(document, { childList: true, subtree: true });
+}
+
+// roda no mundo da página. Base do snipe próprio: relógio do servidor (os anúncios liberam num horário do
+// servidor), envio pelo socket do jogo e espera de respostas. Quem decide o que comprar é o app (snipe.js).
+function snipeMotor() {
+  if (window.__plSnipe) return;
+  let desvio = 0; // Date.now() − hora do servidor
+  const ouvintes = new Set();
+  let wsLigado = null;
+  const ligar = (ws) => ws.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if (typeof d !== 'string') return;
+    if (!d.includes('servidorAgora') && !d.includes('"market"') && !d.includes('marketComprado') && !d.includes('"erro"')) return;
+    let m; try { m = JSON.parse(d); } catch { return; }
+    const s = Number(m.servidorAgora || (m.estado && m.estado.servidorAgora));
+    if (s) desvio = Date.now() - s;
+    for (const f of [...ouvintes]) { try { f(m); } catch { /* */ } }
+  });
+  setInterval(() => { const ws = window.__plWs; if (ws && ws !== wsLigado) { wsLigado = ws; ligar(ws); } }, 400);
+  window.__plSnipe = {
+    agora: () => Date.now() - desvio,
+    pronto: () => !!(window.__plWs && window.__plWs.readyState === 1 && wsLigado === window.__plWs),
+    enviar: (o) => { const ws = window.__plWs; if (!ws || ws.readyState !== 1) return false; ws.send(JSON.stringify(o)); return true; },
+    // espera a primeira mensagem que passar no filtro (ou null no prazo)
+    esperar: (filtro, ms) => new Promise((res) => {
+      const f = (m) => { if (filtro(m)) { ouvintes.delete(f); clearTimeout(t); res(m); } };
+      const t = setTimeout(() => { ouvintes.delete(f); res(null); }, ms);
+      ouvintes.add(f);
+    }),
+  };
 }

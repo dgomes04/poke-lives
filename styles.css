@@ -369,3 +369,58 @@ button.ghost:hover { color: var(--text); background: var(--card2); }
 .ultra-btn.on { background: #14532d; border-color: #16a34a; color: #dcfce7; }
 .ptile .ubadge { display: none; font-size: 9.5px; font-weight: 700; background: #14532d; color: #86efac; border-radius: 4px; padding: 0 5px; margin-right: 4px; }
 .ptile.ultra .ubadge { display: inline-block; }
+
+/* ---------- Snipe próprio ---------- */
+#snipeBox { position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 90; width: min(860px, 95vw); max-height: 86vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line2); border-radius: var(--r-lg); box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; animation: popIn .25s var(--ease) both; }
+#snipeBox[hidden] { display: none; }
+#snipeBox .sn-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+#snipeBox .sn-head .muted { margin-left: auto; }
+#snipeBox .sn-contas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+#snipeBox .sn-conta { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; cursor: pointer; transition: border-color var(--fast); }
+#snipeBox .sn-conta:hover { border-color: var(--line2); }
+#snipeBox .sn-conta.sel { border: 2px solid var(--accent); padding: 9px 11px; }
+#snipeBox .sn-conta-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+#snipeBox .sn-gasto { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+#snipeBox .sn-bar { height: 5px; background: var(--card2); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+#snipeBox .sn-bar i { display: block; height: 100%; background: var(--accent); }
+#snipeBox .sn-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+#snipeBox .sn-card[hidden] { display: none; }
+#snipeBox .sn-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#snipeBox .sn-row-head > b { margin-right: auto; }
+#snipeBox .sn-pill { font-size: 11px; padding: 2px 8px; border-radius: 6px; white-space: nowrap; cursor: default; }
+#snipeBox .sn-pill[data-a], #snipeBox .sn-pill[data-t] { cursor: pointer; }
+#snipeBox .sn-pill.ok { background: rgba(52, 211, 153, .16); color: var(--live); }
+#snipeBox .sn-pill.ens { background: rgba(251, 191, 36, .15); color: var(--warn); }
+#snipeBox .sn-pill.err { background: rgba(248, 113, 113, .15); color: var(--err); }
+#snipeBox .sn-pill.inf { background: var(--accent-bg); color: var(--accent-2); }
+#snipeBox .sn-pill.off { background: var(--card2); color: var(--muted); }
+#snipeBox .sn-seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; font-size: 12px; }
+#snipeBox .sn-seg span { padding: 5px 10px; cursor: pointer; }
+#snipeBox .sn-seg span + span { border-left: 1px solid var(--line); }
+#snipeBox .sn-seg span.on { background: var(--accent-bg); color: var(--accent-2); }
+#snipeBox .sn-aviso { font-size: 12px; color: var(--warn); background: rgba(251, 191, 36, .1); border-radius: 8px; padding: 6px 10px; }
+#snipeBox .sn-tetos { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+#snipeBox input:not([type=checkbox]) { background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 5px 8px; min-width: 0; }
+#snipeBox .sn-tetos input { width: 110px; margin-left: 4px; }
+#snipeBox .sn-regra { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
+#snipeBox .sn-regra-txt { flex: 1; font-size: 12.5px; }
+#snipeBox .sn-vazio { padding: 6px 0; }
+#snipeBox .sn-h { display: grid; grid-template-columns: 70px 80px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+#snipeBox #snFiltros { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+#snipeBox .sn-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#snipeBox label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+#snipeBox label > .sn-seg { align-self: flex-start; color: var(--text); }
+#snipeBox .sn-larga { grid-column: 1 / -1; }
+#snipeBox .sn-larga input { width: 100%; color: var(--text); }
+#snipeBox #snMax { flex: 1; min-width: 120px; color: var(--text); }
+#snipeBox .sn-linha { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex-direction: row; }
+#snipeBox .sn-linha button { padding: 3px 10px; font-size: 12px; }
+#snipeBox .sn-chk { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+#snipeBox .sn-curto { width: 64px; }
+#snipeBox .sn-apagado { opacity: .45; }
+#snipeBox .sn-resumo { background: rgba(52, 211, 153, .12); color: var(--live); font-size: 12px; padding: 8px 10px; border-radius: 8px; }
+#snipeBox .sn-erro { color: var(--err); font-size: 12px; }
+#snipeBox .sn-erro:empty { display: none; }
+#snipeBox .sn-acoes { display: flex; justify-content: flex-end; gap: 8px; }

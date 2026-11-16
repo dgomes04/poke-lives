@@ -272,6 +272,19 @@ function especies() {
   return especiesCache;
 }
 const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+// lista de nomes pro campo "Alvo" do snipe
+ipcMain.handle('snipe:especies', () => [...especies().values()].map(e => ({ id: e.id, n: e.n })));
+// catálogo de itens do jogo (arquivo público), guardado por 6 h
+let itensCache = null;
+ipcMain.handle('snipe:itens', async () => {
+  if (itensCache && Date.now() - itensCache.em < 6 * 3600e3) return itensCache.lista;
+  try {
+    const lista = (JSON.parse(await getText('https://pokeidle.io/assets/items.json')).items || [])
+      .map(i => ({ id: Number(i.id), n: String(i.name || '') })).filter(i => i.id && i.n);
+    if (lista.length) itensCache = { em: Date.now(), lista };
+    return lista;
+  } catch { return itensCache ? itensCache.lista : []; }
+});
 ipcMain.handle('avaliador:especie', (_e, q) => {
   const mapa = especies();
   if (typeof q === 'number' || /^\d+$/.test(String(q))) return mapa.get(Number(q)) || null;
