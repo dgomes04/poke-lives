@@ -12,6 +12,8 @@ const CHANNEL_BLOCK = 30 * 60e3;
 let pokeWv = null, boostState = { twitch: null, kick: null, at: null }, boostBusy = false, boostTimer = null;
 const attempts = {};  // 'twitch:xp' -> { at, channelKey }
 const blocked = {};   // channelKey -> até quando
+const travados = {};  // 'twitch:xp:channelKey' -> até quando (o canal travou só esse boost)
+const livre = (p, k, c) => !(blocked[key(c)] > Date.now()) && !(travados[p + ':' + k + ':' + key(c)] > Date.now());
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // roda uma função dentro do jogo. Com prazo: se a página recarregar no meio, a resposta nunca volta,
@@ -122,31 +124,59 @@ async function pageTwitchPrepare({ title, cost, opcoes }) {
   }).filter(n => !isNaN(n));
   const balance = nums.length ? Math.max(...nums) : null;
   if (balance != null && balance < cost) return { error: 'poucos pontos', balance };
-  if (!document.querySelector('[class*="reward-center__content"]')) sumBtn.click();
-  // 1h se o canal tiver; senão o menor pacote (3h, 5h, 10h) que o saldo paga
-  let item, escolha, achou = false;
-  for (let i = 0; i < 25 && !item; i++) {
-    await wait(200);
-    const lista = [...document.querySelectorAll('[class*="rewardListItem"]')];
-    for (const o of opcoes) {
-      const el = lista.find(e => e.innerText.split('\n').map(t => t.trim()).includes(o.t));
-      if (!el) continue;
-      achou = true;
-      if (balance == null || balance >= o.c) { item = el; escolha = o; break; }
+  const aberto = () => document.querySelector('[class*="reward-center__content"]');
+  const abrir = async () => { if (!aberto()) sumBtn.click(); };
+  // preço que aparece no cartão (o canal pode cobrar diferente de 300/h)
+  const precoDo = (el) => {
+    const ns = el.innerText.split('\n').map(t => t.trim()).filter(t => /^[\d.,]+\s*(mil|k)?$/i.test(t))
+      .map(t => { const n = parseFloat(t.replace(/\./g, '').replace(',', '.')); return /mil|k/i.test(t) ? Math.round(n * 1000) : n; });
+    return ns.length ? ns[0] : null;
+  };
+  // por que o Twitch travou o botão (espera, limite por live, recompensa pausada, pede texto…)
+  const motivoDe = (pop) => {
+    if (!pop) return '';
+    if (pop.querySelector('textarea, input[type="text"]')) return 'a recompensa pede um texto';
+    const ls = pop.innerText.split('\n').map(t => t.trim()).filter(Boolean);
+    return ls.find(t => /espera|cooldown|limite|limit|dispon[íi]vel|esgot|pausad|paused|indispon|aguard|novamente|again|\d+:\d\d/i.test(t)) || '';
+  };
+  await abrir();
+  // 1h se o canal tiver; senão os pacotes (3h, 5h, 10h) que o saldo paga, do menor pro maior.
+  // Se um vier com o botão travado, tenta o próximo.
+  let achou = false, algumPago = false;
+  const motivos = [];
+  for (const o of opcoes) {
+    let item = null;
+    for (let i = 0; i < 25 && !item; i++) {
+      await wait(200);
+      if (!aberto()) await abrir();
+      item = [...document.querySelectorAll('[class*="rewardListItem"]')]
+        .find(e => e.innerText.split('\n').map(t => t.trim()).includes(o.t)) || null;
+      if (!item && i >= 10 && document.querySelector('[class*="rewardListItem"]')) break; // a lista carregou e não tem esse
     }
+    if (!item) continue;
+    achou = true;
+    const preco = precoDo(item) ?? o.c;
+    if (balance != null && balance < preco) continue;
+    algumPago = true;
+    item.querySelector('button').click();
+    await wait(1500);
+    const pop = aberto();
+    const costTxt = preco.toLocaleString('pt-BR');
+    const confirm = pop && [...pop.querySelectorAll('button')].filter(b => !b.closest('[class*="rewardListItem"]'))
+      .find(b => /resgat|redeem|trocar/i.test(b.innerText) || b.innerText.trim() === costTxt || b.innerText.trim() === String(preco));
+    if (confirm && !confirm.disabled) {
+      window.__plConfirm = confirm;
+      return { ok: true, balance, confirmText: confirm.innerText.trim(), horas: o.h, custo: preco };
+    }
+    motivos.push(`${o.h}h: ${confirm ? (motivoDe(pop) || 'botão desativado') : 'botão de confirmar não encontrado'}`);
+    // volta pra lista: fecha e abre o mercado de novo
+    if (aberto()) sumBtn.click();
+    await wait(600);
   }
-  if (!item) { sumBtn.click(); return { error: achou ? 'poucos pontos para os pacotes deste canal' : 'recompensa não encontrada neste canal', balance }; }
-  cost = escolha.c;
-  item.querySelector('button').click();
-  await wait(1500);
-  const pop = document.querySelector('[class*="reward-center__content"]');
-  const costTxt = cost.toLocaleString('pt-BR');
-  const confirm = pop && [...pop.querySelectorAll('button')].filter(b => !b.closest('[class*="rewardListItem"]'))
-    .find(b => /resgat|redeem|trocar/i.test(b.innerText) || b.innerText.trim() === costTxt || b.innerText.trim() === String(cost));
-  if (!confirm) { sumBtn.click(); return { error: 'botão de confirmar não encontrado', balance }; }
-  if (confirm.disabled) { sumBtn.click(); return { error: 'botão de resgatar desativado (pontos? limite do canal?)', balance }; }
-  window.__plConfirm = confirm;
-  return { ok: true, balance, confirmText: confirm.innerText.trim(), horas: escolha.h, custo: escolha.c };
+  if (aberto()) sumBtn.click();
+  if (!achou) return { error: 'recompensa não encontrada neste canal', balance };
+  if (!algumPago) return { error: 'poucos pontos para os pacotes deste canal', balance };
+  return { error: 'resgate travado pelo canal (' + motivos.join('; ') + ')', travado: true, balance };
 }
 
 // Kick, fase 1
@@ -193,7 +223,7 @@ async function pageKickPrepare({ title, cost, opcoes }) {
   const confirm = [...document.querySelectorAll('button')].filter(b => b.offsetParent && b !== item)
     .find(b => /resgat|redeem|confirm|trocar/i.test(b.innerText) || (!before.has(b) && b.innerText.includes(costTxt)));
   if (!confirm) { ptsBtn.click(); return { error: 'botão de confirmar não encontrado', balance }; }
-  if (confirm.disabled) { ptsBtn.click(); return { error: 'botão de resgatar desativado', balance }; }
+  if (confirm.disabled) { ptsBtn.click(); return { error: 'resgate travado pelo canal (botão desativado)', travado: true, balance }; }
   window.__plConfirm = confirm;
   window.__plClose = () => { if (findPanel()) ptsBtn.click(); };
   return { ok: true, balance, confirmText: confirm.innerText.trim(), horas: escolha.h, custo: escolha.c };
@@ -204,8 +234,11 @@ async function pageCommit(doIt) {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const btn = window.__plConfirm;
   window.__plConfirm = null;
-  if (doIt && btn && btn.isConnected) { btn.click(); await wait(2500); }
+  let motivo = '';
+  if (doIt && btn && btn.isConnected && !btn.disabled) { btn.click(); await wait(2500); }
+  else if (doIt) motivo = !btn ? 'a tela da recompensa não estava mais aberta' : !btn.isConnected ? 'a tela da recompensa fechou (a live recarregou?)' : 'o botão ficou desativado';
   const msg = (document.querySelector('[class*="reward-center__content"]')?.innerText || '').split('\n').slice(0, 4).join(' ');
+  if (motivo) { if (window.__plClose) { window.__plClose(); window.__plClose = null; } return { clicked: false, motivo, msg }; }
   // fecha o mercado
   const tw = document.querySelector('[data-test-selector="community-points-summary"] button');
   if (tw && document.querySelector('[class*="reward-center__content"]')) tw.click();
@@ -280,13 +313,15 @@ async function redeemOn(wv, channel, p, k, where) {
   catch (e) { r = { error: 'a página não respondeu' }; }
   if (r.balance != null && window.setPoints) { setPoints(channel, r.balance); save(); }
   if (r.error) {
-    blog(`${ch} (${platName(p)}${where}): ${r.error}${r.balance != null ? ` · saldo ${r.balance}` : ''}`, 'err');
+    // canal travou esse boost (espera, limite por live…): deixa ele de lado por 30 min só pra esse boost
+    if (r.travado) travados[p + ':' + k + ':' + key(channel)] = Date.now() + CHANNEL_BLOCK;
+    blog(`${ch} (${platName(p)}${where}): ${r.error}${r.balance != null ? ` · saldo ${r.balance}` : ''}${r.travado ? ' · tento de novo em 30 min' : ''}`, 'err');
     return 'skip';
   }
   const horas = r.horas || 1, custo = r.custo || b.cost;
   const text = `Resgatar ${b.label} ${horas}h (${custo} pontos) no canal ${ch} da ${platName(p)}${where}? Saldo: ${r.balance ?? '?'}`;
   const ok = cfg.settings.boost.confirm ? await askConfirm(text) : true;
-  const res = await runIn(wv, pageCommit, ok).catch(() => ({ clicked: false }));
+  const res = await runIn(wv, pageCommit, ok).catch(() => ({ clicked: false, motivo: 'a página não respondeu' }));
   if (!ok) { blog(`Resgate de ${b.label} em ${ch} cancelado.`); attempts[p + ':' + k] = { at: Date.now(), channelKey: null }; return 'done'; }
   if (res.clicked) {
     blog(`Resgatei ${b.label} ${horas}h em ${ch} (${platName(p)}${where}) por ${custo} pontos. Conferindo no PokeIdle…`, 'ok');
@@ -296,14 +331,14 @@ async function redeemOn(wv, channel, p, k, where) {
     if (r.balance != null && window.setPoints) { setPoints(channel, r.balance - custo); save(); renderList(); }
     return 'done';
   }
-  blog(`Não consegui clicar em resgatar em ${ch}.`, 'err');
+  blog(`Não consegui clicar em resgatar em ${ch}${res.motivo ? ': ' + res.motivo : ''}. Nenhum ponto foi gasto.`, 'err');
   return 'skip';
 }
 
 async function tryRedeem(p, k) {
   const b = BOOSTS[k];
   // 1º: as lives abertas na grade
-  const cands = slots[p].filter(s => s.channel && s.wv && !(blocked[key(s.channel)] > Date.now()));
+  const cands = slots[p].filter(s => s.channel && s.wv && livre(p, k, s.channel));
   for (const s of cands) if (await redeemOn(s.wv, s.channel, p, k, '') === 'done') return;
   // 2º: qualquer outro canal da lista com saldo suficiente (mesmo offline), numa aba escondida
   if (await tryRedeemElsewhere(p, k)) return;
@@ -315,7 +350,7 @@ async function tryRedeemElsewhere(p, k) {
   const b = BOOSTS[k];
   const open = new Set(slots[p].filter(s => s.channel).map(s => key(s.channel)));
   const cands = cfg.channels
-    .filter(c => c.platform === p && !open.has(key(c)) && !(blocked[key(c)] > Date.now()))
+    .filter(c => c.platform === p && !open.has(key(c)) && livre(p, k, c))
     .map(c => ({ c, bal: window.pointsOf ? pointsOf(c)?.balance : null }))
     .filter(x => x.bal != null && x.bal >= b.cost)
     .sort((x, y) => y.bal - x.bal)
