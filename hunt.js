@@ -29,14 +29,21 @@ async function pageReadBestHunt({ mode }) {
   if (!ctrl()) return { error: 'painel /hunt não abriu' };
   const ready = () => !document.querySelector('.pih-carga') && document.querySelector('.pih-tab tbody tr');
   const settle = async () => { await wait(300); for (let i = 0; i < 50 && !ready(); i++) await wait(200); };
+  // espera o painel terminar de calcular antes de clicar: enquanto carrega, os botões de região
+  // nem existem e o painel é redesenhado (o clique se perderia)
+  await settle();
+  // sempre clica no tipo da hunt e depois em "Todas", nessa ordem, mesmo que já pareçam marcados:
+  // sem isso o ranking pode ficar só no mapa que estava aberto
   const ord = document.querySelector(`[data-ordem="${mode}"]`);
   if (!ord) return { error: `modo ${mode} não existe na /hunt` };
-  if (!ord.classList.contains('on')) { ord.click(); await settle(); }
+  ord.click(); await settle();
   const lib = document.querySelector('input[data-pref="soLiberadas"]');
   if (lib && !lib.checked) { lib.click(); await settle(); }
   const todas = document.querySelector('[data-regiao=""]');
-  if (todas && !todas.classList.contains('on')) { todas.click(); await settle(); }
-  await settle();
+  if (!todas) return { error: 'botão "Todas" da /hunt não apareceu' };
+  todas.click(); await settle();
+  if (!document.querySelector(`[data-ordem="${mode}"]`)?.classList.contains('on') || !document.querySelector('[data-regiao=""]')?.classList.contains('on'))
+    return { error: 'a /hunt não ficou no tipo certo com "Todas" marcada' };
   const rows = [...document.querySelectorAll('.pih-tab tbody tr')].map(tr => {
     const b = tr.querySelector('.pih-hunt b');
     const small = tr.querySelector('.pih-hunt small');

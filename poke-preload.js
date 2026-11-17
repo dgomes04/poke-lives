@@ -12,6 +12,13 @@ if (location.hostname === 'pokeidle.io') {
     for (const k of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) WS[k] = Orig[k];
     window.WebSocket = WS;
   })()`).catch(() => {});
+  // janelinha flutuante do jogo: o PiP de documento só é permitido na janela principal do navegador.
+  // Dentro da aba do app o Chromium mata a página (e às vezes o app inteiro). Sem ele, o jogo usa
+  // a janelinha dentro da página, ou o PiP de vídeo no modo economia, que funcionam.
+  webFrame.executeJavaScript(`(() => {
+    try { delete Window.prototype.documentPictureInPicture; } catch {}
+    try { delete window.documentPictureInPicture; } catch {}
+  })()`).catch(() => {});
   // Avaliador: guarda os anúncios de Pokémon que chegam pelo socket e põe um botão "Avaliar" nos cards
   webFrame.executeJavaScript(`(${mercadoAvaliar.toString()})()`).catch(() => {});
   // Snipe próprio: só escuta o socket (relógio do servidor, respostas do Mercado). Nada roda até o app pedir.
