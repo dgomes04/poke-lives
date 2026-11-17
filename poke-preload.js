@@ -99,37 +99,74 @@ function mercadoAvaliar() {
   };
   const medir = (pk, esp) => ({ nota: mods.N.notaDePokemon(pk, esp), pve: mods.G.poderNoNivel(pk, esp, Math.max(1, Number(pk.level) || 1)) });
 
-  // Tabela de preços da espécie (cache de 10 min, um pedido por vez)
+  // Tabela de preços da espécie. O servidor tem anti-flood ("Devagar"), então:
+  // um pedido por vez, com intervalo mínimo; cache de 30 min; na maioria das espécies basta 1 página;
+  // e, se o servidor reclamar, para tudo por um tempo (que dobra se ele reclamar de novo).
+  const VENDAS_TTL = 30 * 60e3, RITMO_MS = 1500, VENDAS_ALVO = 30, MAX_PAGINAS = 3;
   const vendasCache = new Map();
-  let filaWs = Promise.resolve();
+  let filaWs = Promise.resolve(), ultimoEnvio = 0, pausaAte = 0, pausaMs = 20e3;
+  const dormir = (ms) => new Promise(r => setTimeout(r, ms));
+  const ehDevagar = (x) => x && x.t === 'erro' && /devagar|flood|muitas|r[aá]pido|aguarde/i.test(String(x.msg || x.erro || ''));
+  // ouve o socket inteiro: se o servidor mandar "Devagar" (mesmo por pedido do próprio jogo), pausa
+  const ouvirDevagar = (ws) => ws.addEventListener('message', (ev) => {
+    if (typeof ev.data !== 'string' || !ev.data.includes('"erro"')) return;
+    let x; try { x = JSON.parse(ev.data); } catch { return; }
+    if (!ehDevagar(x)) return;
+    const agora = Date.now();
+    pausaMs = pausaAte > agora - 60e3 ? Math.min(pausaMs * 2, 120e3) : 20e3; // reclamou de novo logo depois: dobra
+    pausaAte = agora + pausaMs;
+  });
+  let wsDevagar = null;
+  setInterval(() => { const ws = window.__plWs; if (ws && ws !== wsDevagar) { wsDevagar = ws; ouvirDevagar(ws); } }, 500);
   const pagina = (ws, esp, pg) => new Promise((resolve) => {
     const seq = 900000 + Math.floor(Math.random() * 90000);
     const fim = setTimeout(() => { ws.removeEventListener('message', o); resolve(null); }, 8000);
     function o(ev) {
-      if (typeof ev.data !== 'string' || !ev.data.includes('historicoGlobal')) return;
+      if (typeof ev.data !== 'string' || (!ev.data.includes('historicoGlobal') && !ev.data.includes('"erro"'))) return;
       let x; try { x = JSON.parse(ev.data); } catch { return; }
+      if (ehDevagar(x)) { clearTimeout(fim); ws.removeEventListener('message', o); resolve({ devagar: true }); return; }
       if (x.t !== 'market' || x.aba !== 'historicoGlobal' || (x.seq != null && x.seq !== seq)) return;
       clearTimeout(fim); ws.removeEventListener('message', o); resolve(x);
     }
     ws.addEventListener('message', o);
+    ultimoEnvio = Date.now();
     ws.send(JSON.stringify({ t: 'market.historicoGlobal', pagina: pg, seq, tipo: 'pokemon', busca: esp.name }));
   });
-  const historico = (esp) => {
+  // espera a vez: respeita o intervalo mínimo e a pausa do anti-flood
+  const aguardarVez = async () => {
+    for (;;) {
+      const espera = Math.max(pausaAte - Date.now(), ultimoEnvio + RITMO_MS - Date.now());
+      if (espera <= 0) return;
+      await dormir(Math.min(espera, 2000));
+    }
+  };
+  // ainda(): se devolver false quando chegar a vez (o card saiu da tela), não pede nada
+  const historico = (esp, ainda) => {
+    const quer = ainda || (() => true);
     const c = vendasCache.get(esp.pokeId);
-    if (c && Date.now() - c.em < 10 * 60e3) return c.p;
-    const p = (filaWs = filaWs.then(async () => {
-      const ws = window.__plWs, linhas = [];
-      if (!ws || ws.readyState !== 1) return linhas;
-      for (let pg = 0; pg < 4; pg++) {
+    if (c && c.pendente) { c.quer.push(quer); return c.p; }
+    if (c && Date.now() - c.em < VENDAS_TTL) return c.p;
+    const ent = { em: Date.now(), pendente: true, quer: [quer] };
+    ent.p = (filaWs = filaWs.then(async () => {
+      if (!ent.quer.some(f => f())) { vendasCache.delete(esp.pokeId); return null; } // ninguém mais precisa (cards saíram da tela)
+      const linhas = [];
+      let completo = true;
+      for (let pg = 0; pg < MAX_PAGINAS; pg++) {
+        await aguardarVez();
+        const ws = window.__plWs;
+        if (!ws || ws.readyState !== 1) { completo = false; break; }
         const m = await pagina(ws, esp, pg);
-        if (!m) break;
+        if (!m || m.devagar) { completo = false; break; }
         for (const l of m.linhas || []) if (l.tipo === 'pokemon' && l.ficha && Number(l.ficha.speciesId) === esp.pokeId) linhas.push(l);
-        if (!m.temMais) break;
+        if (!m.temMais || linhas.length >= VENDAS_ALVO) break;
       }
+      ent.pendente = false; ent.em = Date.now();
+      // incompleto (servidor reclamou, socket caiu): guarda o que veio só por 2 min, pra tentar de novo depois
+      if (!completo) { ent.em = Date.now() - VENDAS_TTL + 2 * 60e3; if (!linhas.length) { vendasCache.delete(esp.pokeId); return null; } }
       return linhas;
-    }));
-    vendasCache.set(esp.pokeId, { em: Date.now(), p });
-    return p;
+    }).catch(() => { vendasCache.delete(esp.pokeId); return null; }));
+    vendasCache.set(esp.pokeId, ent);
+    return ent.p;
   };
   const OURO_POR_GEMA = 4.6e6;
   const quantil = (vals, q) => {
@@ -140,12 +177,13 @@ function mercadoAvaliar() {
     return s[s.length - 1].v;
   };
   // mesma conta do Avaliador: nota parecida, mesma potência, nível parecido, ajustado pela força
-  async function precoDeMercado(a) {
+  async function precoDeMercado(a, ainda) {
     await modulos();
     const esp = await especie(Number(a.ficha.speciesId));
     if (!esp) return null;
     const alvo = medir(a.ficha, esp);
-    const linhas = await historico(esp);
+    const linhas = await historico(esp, ainda);
+    if (!linhas) return null;
     const moeda = a.moeda === 'gold' ? 'gold' : 'orb';
     const w = [];
     for (const l of linhas) {
@@ -165,7 +203,7 @@ function mercadoAvaliar() {
   // o snipe usa as mesmas contas (preço de mercado, nota, Tabela de preços)
   window.__plAval = {
     modulos, especie, medir, precoDeMercado, historico,
-    historicoPronto: (id) => { const c = vendasCache.get(Number(id)); return !!(c && Date.now() - c.em < 10 * 60e3); },
+    historicoPronto: (id) => { const c = vendasCache.get(Number(id)); return !!(c && !c.pendente && Date.now() - c.em < VENDAS_TTL); },
   };
 
   // ---- selo no card ----
@@ -187,7 +225,7 @@ function mercadoAvaliar() {
     return cand.find(a => txt.includes('Nv ' + a.ficha.level) || txt.includes('Nv' + a.ficha.level)) || cand[0] || null;
   };
   const resultados = new Map(); // id do anúncio -> promessa do preço
-  async function pintarSelo(card, el, tentativa = 0) {
+  async function pintarSelo(card, el, tentativa = 0, espera = 0) {
     const a = acharAnuncio(card);
     if (!a) { // o pacote do anúncio ainda não chegou: tenta de novo
       el.textContent = 'Avaliar';
@@ -197,8 +235,21 @@ function mercadoAvaliar() {
     el.dataset.anuncio = String(a.id);
     el.textContent = 'calculando preço…';
     if (brl == null) brl = (await pedirApp('cambio')) || 5.4;
-    if (!resultados.has(String(a.id))) resultados.set(String(a.id), precoDeMercado(a).catch(() => null));
-    const r = await resultados.get(String(a.id));
+    const chave = String(a.id);
+    if (!resultados.has(chave)) {
+      const p = precoDeMercado(a, () => el.isConnected).catch(() => null);
+      resultados.set(chave, p);
+      p.then(r => { if (r == null) resultados.delete(chave); }); // não calculou (saiu da tela, servidor pediu calma): tenta de novo quando voltar
+    }
+    const r = await resultados.get(chave);
+    if (!el.isConnected) return;
+    if (r == null && espera < 3) { // não deu agora (servidor pediu calma, jogo reconectando): tenta de novo depois
+      const calma = Date.now() < pausaAte;
+      el.style.cssText = cssSelo + 'border:1px dashed #6b5a80;';
+      el.innerHTML = `<b>preço em espera</b><br><span style="opacity:.75">${calma ? 'o servidor pediu calma; tento de novo já já' : 'tento de novo em instantes'}</span>`;
+      setTimeout(() => { if (el.isConnected) pintarSelo(card, el, 5, espera + 1); }, Math.max(pausaAte - Date.now(), 5000) + 500);
+      return;
+    }
     const moeda = a.moeda === 'gold' ? 'gold' : 'orb';
     const usd = moeda === 'orb' ? a.preco * 0.01 : (a.preco / OURO_POR_GEMA) * 0.01;
     const d2 = (v) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -227,8 +278,18 @@ function mercadoAvaliar() {
     };
     const vend = card.querySelector('.cm-vend');
     vend.parentElement.insertBefore(el, vend);
-    pintarSelo(card, el);
+    // só calcula quando o card aparece na tela (rolar a lista não dispara dezenas de pedidos de uma vez)
+    el.textContent = 'preço ao aparecer';
+    visivel.observe(el);
   };
+  const visivel = new IntersectionObserver((ents) => {
+    for (const e of ents) {
+      if (!e.isIntersecting) continue;
+      visivel.unobserve(e.target);
+      const card = e.target.closest('.cm-card');
+      if (card) pintarSelo(card, e.target);
+    }
+  }, { rootMargin: '150px' });
   // observa o documento (que não é trocado), e não o <html> do início, que o carregamento da página substitui
   let agendado = false;
   new MutationObserver(() => {
