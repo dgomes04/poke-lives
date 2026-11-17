@@ -202,6 +202,12 @@ async function pageKickPrepare({ title, cost, opcoes }) {
   if (!isNaN(balance) && balance < cost) return { error: 'poucos pontos', balance };
   let panel = findPanel();
   if (!panel) ptsBtn.click();
+  // preço que aparece no cartão: o canal define (ex.: 3h por 600, não 3 × 300)
+  const precoDo = (el) => {
+    const ns = el.innerText.split('\n').map(x => x.trim()).filter(x => /^[\d.,]+\s*(mil|k)?$/i.test(x))
+      .map(x => { const e = /k$/i.test(x); const n = parseFloat(e ? x.replace(/,/g, '') : x.replace(/\./g, '').replace(',', '.')); return /mil|k$/i.test(x) ? Math.round(n * 1000) : n; });
+    return ns.length ? ns[0] : null;
+  };
   // 1h se o canal tiver; senão o menor pacote (3h, 5h, 10h) que o saldo paga
   let item, escolha, achou = false;
   for (let i = 0; i < 25 && !item; i++) {
@@ -212,7 +218,8 @@ async function pageKickPrepare({ title, cost, opcoes }) {
       const el = lista.find(b => b.innerText.split('\n').map(x => x.trim()).includes(o.t));
       if (!el) continue;
       achou = true;
-      if (isNaN(balance) || balance >= o.c) { item = el; escolha = o; break; }
+      const preco = precoDo(el) ?? o.c;
+      if (isNaN(balance) || balance >= preco) { item = el; escolha = { ...o, c: preco }; break; }
     }
   }
   if (!item) { ptsBtn.click(); return { error: achou ? 'poucos pontos para os pacotes deste canal' : 'recompensa não encontrada neste canal', balance }; }
