@@ -51,8 +51,8 @@ if (location.hostname === 'pokeidle.io') {
 }
 
 // roda no mundo da página (texto injetado acima)
-// Mercado: cada anúncio de Pokémon ganha um selo com o preço de mercado (vendas parecidas dos últimos 30 dias,
-// pelas fórmulas do próprio jogo). Clicar no selo abre o Avaliador. Só leitura: nada é comprado.
+// Mercado: cada anúncio de Pokémon ganha um botão "Avaliar", que abre o Avaliador com aquele anúncio.
+// O preço de mercado (vendas parecidas) só é pedido ao servidor quando você clica, ou pelo Snipe. Só leitura.
 function mercadoAvaliar() {
   if (window.__plMercado) return; window.__plMercado = true;
   const anuncios = new Map(); // id -> anúncio de Pokémon visto agora
@@ -206,14 +206,7 @@ function mercadoAvaliar() {
     historicoPronto: (id) => { const c = vendasCache.get(Number(id)); return !!(c && !c.pendente && Date.now() - c.em < VENDAS_TTL); },
   };
 
-  // ---- selo no card ----
-  const cssSelo = 'display:block;margin-top:5px;padding:4px 7px;border-radius:7px;font:500 10.5px/1.35 system-ui;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;background:#2a1d33cc;color:#f3e8ff;';
-  const fmt = (v, moeda) => {
-    if (v == null) return '—';
-    if (moeda === 'gold') return v >= 1e9 ? (v / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' bi' : v >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : Math.round(v).toLocaleString('pt-BR');
-    return Math.round(v).toLocaleString('pt-BR');
-  };
-  let brl = null;
+  // ---- botão "Avaliar" no card: só calcula quando você clica (abre o Avaliador) ----
   const normal = (s) => String(s || '').toLowerCase().trim();
   const acharAnuncio = (card) => {
     const vend = normal(card.querySelector('.cm-vend b')?.textContent);
@@ -224,77 +217,26 @@ function mercadoAvaliar() {
     const cand = porNome.length ? porNome : lista;
     return cand.find(a => txt.includes('Nv ' + a.ficha.level) || txt.includes('Nv' + a.ficha.level)) || cand[0] || null;
   };
-  const resultados = new Map(); // id do anúncio -> promessa do preço
-  async function pintarSelo(card, el, tentativa = 0, espera = 0) {
-    const a = acharAnuncio(card);
-    if (!a) { // o pacote do anúncio ainda não chegou: tenta de novo
-      el.textContent = 'Avaliar';
-      if (tentativa < 5) setTimeout(() => pintarSelo(card, el, tentativa + 1), 800);
-      return;
-    }
-    el.dataset.anuncio = String(a.id);
-    el.textContent = 'calculando preço…';
-    if (brl == null) brl = (await pedirApp('cambio')) || 5.4;
-    const chave = String(a.id);
-    if (!resultados.has(chave)) {
-      const p = precoDeMercado(a, () => el.isConnected).catch(() => null);
-      resultados.set(chave, p);
-      p.then(r => { if (r == null) resultados.delete(chave); }); // não calculou (saiu da tela, servidor pediu calma): tenta de novo quando voltar
-    }
-    const r = await resultados.get(chave);
-    if (!el.isConnected) return;
-    if (r == null && espera < 3) { // não deu agora (servidor pediu calma, jogo reconectando): tenta de novo depois
-      const calma = Date.now() < pausaAte;
-      el.style.cssText = cssSelo + 'border:1px dashed #6b5a80;';
-      el.innerHTML = `<b>preço em espera</b><br><span style="opacity:.75">${calma ? 'o servidor pediu calma; tento de novo já já' : 'tento de novo em instantes'}</span>`;
-      setTimeout(() => { if (el.isConnected) pintarSelo(card, el, 5, espera + 1); }, Math.max(pausaAte - Date.now(), 5000) + 500);
-      return;
-    }
-    const moeda = a.moeda === 'gold' ? 'gold' : 'orb';
-    const usd = moeda === 'orb' ? a.preco * 0.01 : (a.preco / OURO_POR_GEMA) * 0.01;
-    const d2 = (v) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const dinheiro = `US$ ${d2(usd)} · R$ ${d2(usd * brl)}`;
-    if (!r || r.semVendas || !r.justo) {
-      el.style.cssText = cssSelo + 'border:1px dashed #6b5a80;';
-      el.innerHTML = `<b>sem vendas parecidas</b><br><span style="opacity:.75">clique para avaliar</span><br><span style="opacity:.75">${dinheiro}</span>`;
-      return;
-    }
-    const pct = Math.round((a.preco / r.justo - 1) * 100);
-    const sinal = pct > 0 ? '+' : '';
-    const [rot, cor] = a.preco < r.baixo ? ['abaixo do mercado', '#4ade80'] : a.preco > r.alto ? ['acima do mercado', '#f87171'] : ['no preço', '#f3e8ff'];
-    el.style.cssText = cssSelo + `border:1px ${r.n < 3 ? 'dashed' : 'solid'} ${cor === '#f3e8ff' ? '#8b5cf6' : cor};`;
-    el.title = `Mediana de ${r.n} venda(s) parecida(s) nos últimos 30 dias${r.n < 3 ? ' (poucas vendas: estimativa fraca)' : ''}. Clique para ver no Avaliador.`;
-    el.innerHTML = `<b style="color:${cor}">${rot} ${sinal}${pct}%</b><br><span style="opacity:.8">mercado ${fmt(r.justo, moeda)} · faixa ${fmt(r.baixo, moeda)}–${fmt(r.alto, moeda)}</span><br><span style="opacity:.8">${dinheiro}</span>`;
-  }
-  const selo = (card) => {
-    if (card.querySelector('.pl-preco') || !card.querySelector('.cm-vend')) return;
-    const el = document.createElement('button');
-    el.type = 'button'; el.className = 'pl-preco'; el.style.cssText = cssSelo + 'border:1px solid #6b5a80;';
-    el.textContent = '…';
-    el.onclick = (e) => {
+  const botao = (card) => {
+    if (card.querySelector('.pl-avaliar') || !card.querySelector('.cm-vend')) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pl-avaliar'; b.textContent = 'Avaliar';
+    b.title = 'Poke Lives: diz se o preço vale pela força e pelas vendas parecidas';
+    b.style.cssText = 'position:absolute;top:6px;left:6px;z-index:5;font:600 11px system-ui;padding:3px 8px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aedd9;color:#fff;cursor:pointer';
+    b.onclick = (e) => {
       e.stopPropagation(); e.preventDefault();
-      const a = anuncios.get(el.dataset.anuncio) || acharAnuncio(card);
-      if (a) window.postMessage({ __plAvaliar: { id: a.id, ficha: a.ficha, preco: a.preco, moeda: a.moeda, vendedor: a.vendedor, nome: card.querySelector('.cm-nome-txt')?.textContent || '' } }, '*');
+      const a = acharAnuncio(card);
+      if (!a) { b.textContent = 'Recarregue a lista'; setTimeout(() => { b.textContent = 'Avaliar'; }, 2500); return; }
+      window.postMessage({ __plAvaliar: { id: a.id, ficha: a.ficha, preco: a.preco, moeda: a.moeda, vendedor: a.vendedor, nome: card.querySelector('.cm-nome-txt')?.textContent || '' } }, '*');
     };
-    const vend = card.querySelector('.cm-vend');
-    vend.parentElement.insertBefore(el, vend);
-    // só calcula quando o card aparece na tela (rolar a lista não dispara dezenas de pedidos de uma vez)
-    el.textContent = 'preço ao aparecer';
-    visivel.observe(el);
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+    card.appendChild(b);
   };
-  const visivel = new IntersectionObserver((ents) => {
-    for (const e of ents) {
-      if (!e.isIntersecting) continue;
-      visivel.unobserve(e.target);
-      const card = e.target.closest('.cm-card');
-      if (card) pintarSelo(card, e.target);
-    }
-  }, { rootMargin: '150px' });
   // observa o documento (que não é trocado), e não o <html> do início, que o carregamento da página substitui
   let agendado = false;
   new MutationObserver(() => {
     if (agendado) return; agendado = true;
-    setTimeout(() => { agendado = false; for (const c of document.querySelectorAll('.cm-card.poke')) selo(c); }, 150);
+    setTimeout(() => { agendado = false; for (const c of document.querySelectorAll('.cm-card.poke')) botao(c); }, 150);
   }).observe(document, { childList: true, subtree: true });
 }
 
