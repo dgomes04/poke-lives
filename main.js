@@ -241,14 +241,14 @@ app.whenReady().then(async () => {
   }, 20000);
 });
 
-// ---------- votos do TopIdle ----------
+// ---------- votos do IdleHub ----------
 // O app só ABRE a página de voto; o clique em "Votar agora" (checagem da Cloudflare) é feito por você.
-// janela de voto de cada conta: sessão própria (persist:voto-<conta>), o login do TopIdle fica salvo nela
+// janela de voto de cada conta: sessão própria (persist:voto-<conta>), o login do IdleHub fica salvo nela
 const votoJanelas = new Map();
 ipcMain.handle('voto:janela', (_e, { conta, url, nome }) => {
   let u;
   try { u = new URL(url); } catch { return { erro: 'link inválido' }; }
-  if (u.protocol !== 'https:' || !/(^|\.)topidle\./i.test(u.hostname)) return { erro: 'o link não é do TopIdle' };
+  if (u.protocol !== 'https:' || !/(^|\.)(idlehub|topidle)\./i.test(u.hostname)) return { erro: 'o link não é do site de votos (IdleHub)' };
   if (!/^[\w-]{1,40}$/.test(conta || '')) return { erro: 'conta inválida' };
   let w = votoJanelas.get(conta);
   if (w && !w.isDestroyed()) { w.loadURL(u.href); if (w.isMinimized()) w.restore(); w.show(); w.focus(); return { ok: true }; }

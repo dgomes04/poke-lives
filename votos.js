@@ -1,5 +1,5 @@
-// Vote & Ganhe (TopIdle): confere se o voto de cada conta está liberado, avisa e abre a página de voto
-// de cada conta numa janela do app com sessão própria (o login do TopIdle de cada conta fica salvo nela).
+// Vote & Ganhe (IdleHub): confere se o voto de cada conta está liberado, avisa e abre a página de voto
+// de cada conta numa janela do app com sessão própria (o login do IdleHub de cada conta fica salvo nela).
 // O clique em "Votar agora" (que passa pela checagem da Cloudflare) é feito por você.
 
 const VOTO_CHECAR = 30 * 60e3;
@@ -11,7 +11,7 @@ async function pageVoto() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem('sessao') || 'null'); } catch { /* sem sessão */ }
   if (!s || !s.token) return { erro: 'sem login' };
-  const r = await fetch('/topidle/me', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: s.token }) });
+  const r = await fetch('/idlehub/me', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: s.token }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) return { erro: d.erro || 'o jogo não respondeu' };
   return { ativo: !!d.ativo, esperaMs: Number(d.esperaMs) || 0, url: d.url || null, votos: d.votos ?? null, diamantes: d.diamantes ?? null,
@@ -41,12 +41,12 @@ function avisarVotos() {
   }
   if (novos.length && cfg.settings.votoAuto !== false) {
     // abre sozinho, igual às outras automações: você só vota e autoriza com o Google em cada aba
-    blog(`Voto do TopIdle liberado: ${novos.join(', ')}. Abrindo as janelas de voto…`, 'ok', 'conta');
-    notify('Voto liberado no TopIdle', `Abri o voto de ${novos.join(', ')}: é só clicar em "Votar agora".`, 'voto:' + novos.join(','), 0);
+    blog(`Voto do IdleHub liberado: ${novos.join(', ')}. Abrindo as janelas de voto…`, 'ok', 'conta');
+    notify('Voto liberado no IdleHub', `Abri o voto de ${novos.join(', ')}: é só clicar em "Votar agora".`, 'voto:' + novos.join(','), 0);
     (async () => { for (const a of cfg.settings.pokeAccounts) if (novos.includes(a.name)) { await abrirVoto(a.id); await sleep(1500); } })();
   } else if (novos.length) {
-    blog(`Voto do TopIdle liberado: ${novos.join(', ')}. Abra em Votar → Abrir votos liberados.`, 'ok', 'conta');
-    notify('Voto liberado no TopIdle', `${novos.join(', ')} — 2 votos = 1 diamante`, 'voto:' + novos.join(','), 0);
+    blog(`Voto do IdleHub liberado: ${novos.join(', ')}. Abra em Votar → Abrir votos liberados.`, 'ok', 'conta');
+    notify('Voto liberado no IdleHub', `${novos.join(', ')} — 2 votos = 1 diamante`, 'voto:' + novos.join(','), 0);
   }
 }
 
@@ -87,7 +87,7 @@ function renderVotoMenu() {
       <div><b>${a.name}</b> <small class="muted">${v?.nick ? 'nick ' + v.nick : ''}</small><br><small>${st}${v?.votos != null ? ` · ${v.votos} votos · ${v.diamantes ?? 0} 💎` : ''}</small></div>
       <button data-voto-abrir="${a.id}" ${votoLiberado(v) ? '' : 'class="ghost"'}>Abrir</button></div>`;
   }).join('') +
-  `<p class="hint">Cada conta tem a própria janela de voto. Na primeira vez, entre no TopIdle nela; o login fica salvo.</p>` +
+  `<p class="hint">Cada conta tem a própria janela de voto. Na primeira vez, entre no IdleHub nela; o login fica salvo.</p>` +
   `<button id="votoTodos" class="accent">Abrir votos liberados${liberados ? ` (${liberados})` : ''}</button>
    <button id="votoChecar" class="ghost">Conferir agora</button>`;
   $('votoAuto').onchange = () => { cfg.settings.votoAuto = $('votoAuto').checked; save(); };

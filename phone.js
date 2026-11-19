@@ -113,7 +113,7 @@ window.phoneStatus = function () {
     else if (c.revives === 0 || c.pocoes === 0) alertas.push({ tipo: 'aviso', txt: `${c.nome}: acabou ${[c.revives === 0 ? 'revive' : null, c.pocoes === 0 ? 'poção' : null].filter(Boolean).join(' e ')}` });
   }
   const votos = window.votoResumo ? votoResumo().filter(v => v.liberado).map(v => v.nome) : [];
-  if (votos.length) alertas.push({ tipo: 'aviso', txt: `Voto do TopIdle liberado: ${votos.join(', ')} (abra pelo PC)` });
+  if (votos.length) alertas.push({ tipo: 'aviso', txt: `Voto do IdleHub liberado: ${votos.join(', ')} (abra pelo PC)` });
   for (const x of shinyHoje.slice(0, 3)) alertas.push({ tipo: 'shiny', txt: `Shiny ${x.nome} em ${x.conta}`, t: x.t });
 
   return {
