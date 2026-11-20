@@ -6,7 +6,7 @@ const HUNT_TICK = 20e3;         // relógio interno (e intervalo das retentativa
 const HUNT_LEVEL_EVERY = 60e3;  // olha o nível do pokémon a cada 1 min
 const HUNT_RETRY_FOR = 30 * 60e3; // tenta trocar por até 30 min (pokémon em batalha)
 const HUNT_MIN_GAIN = 1.05;     // só troca se for 5% melhor
-const MODE_LABEL = { xp: 'XP/h', ouro: 'Ouro/h', shiny: 'Shiny/h' };
+const MODE_LABEL = { xp: 'XP/h', ouro: 'Ouro/h', shiny: 'Shiny/h', pokemon: 'Pokémon' };
 
 const huntState = {}; // id -> { next, lvlAt, lvl, pending: { name, region, until, nextTry, gain } }
 
@@ -61,6 +61,37 @@ async function pageReadBestHunt({ mode }) {
   const fechar = document.querySelector('.pih-ctrl')?.closest('[class]')?.parentElement?.querySelector('[data-acao="fechar"]') || document.querySelector('[data-acao="fechar"]');
   if (fechar) fechar.click(); else btn.click();
   return { rows: rows.slice(0, 25), current };
+}
+
+// farm de um Pokémon: acha as hunts onde ele aparece (lista que o jogo manda ao conectar) e escolhe,
+// entre as liberadas, a que tem a maior parte dos aparecimentos dele
+async function pageFindSpecies({ alvo, nivel }) {
+  const hs = window.__plHunts;
+  if (!Array.isArray(hs) || !hs.length) return { error: 'a lista de hunts do jogo ainda não chegou', cedo: true };
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const q = norm(alvo);
+  if (!q) return { error: 'digite o nome do Pokémon' };
+  const nomes = [...new Set(hs.flatMap(h => h.especies.map(e => e.nome)).filter(Boolean))];
+  const nome = nomes.find(n => norm(n) === q) || nomes.filter(n => norm(n).startsWith(q)).sort((a, b) => a.length - b.length)[0];
+  if (!nome) {
+    const parecidos = nomes.filter(n => norm(n).includes(q)).slice(0, 4);
+    return { error: `"${alvo}" não aparece em nenhuma hunt${parecidos.length ? ` (você quis dizer ${parecidos.join(', ')}?)` : ''}` };
+  }
+  const com = hs.filter(h => h.especies.some(e => e.nome === nome)).map(h => {
+    const tot = h.especies.reduce((t, e) => t + e.pontos, 0) || 1;
+    const p = h.especies.filter(e => e.nome === nome).reduce((t, e) => t + e.pontos, 0);
+    return { nome: h.nome, nivel: h.nivel, area: h.area, pct: p / tot };
+  });
+  const lib = nivel ? com.filter(h => h.nivel <= nivel) : com;
+  if (!lib.length) {
+    const min = Math.min(...com.map(h => h.nivel));
+    return { error: `${nome} só aparece em hunt de nível ${min} ou mais (a conta está no ${nivel})`, nome };
+  }
+  lib.sort((a, b) => b.pct - a.pct || b.nivel - a.nivel);
+  const vis = (e) => e && e.offsetParent;
+  const leaf = [...document.querySelectorAll('body *')].find(e => e.children.length === 0 && vis(e) && /^.+ · nível \d+$/.test(e.textContent.trim()));
+  const current = leaf ? leaf.textContent.trim().replace(/ · nível \d+$/, '') : null;
+  return { nome, best: lib[0], total: com.length, liberadas: lib.length, current };
 }
 
 // lê o botão "Centro Pokemon": com contagem ("3s") = pokémon em combate, não dá pra trocar de mapa
@@ -123,16 +154,29 @@ async function pageGoHunt({ name, region }) {
   const modos = [...document.querySelectorAll('button.mapa-modo-bt')].filter(vis);
   const lista = modos.find(b => /LISTA/i.test(b.innerText)) || modos[modos.length - 1];
   if (lista && !lista.classList.contains('on')) { lista.click(); await wait(500); }
-  const tab = [...document.querySelectorAll('button.mapa-reg-bt')].find(b => b.innerText.trim().toLowerCase().startsWith(region.toLowerCase()));
+  const findRow = () => [...document.querySelectorAll('.ml-linha')].find(r => (r.querySelector('.ml-nome')?.textContent || '').trim().toLowerCase() === name.toLowerCase());
+  const procurar = async () => {
+    const inp = busca();
+    if (!inp) return;
+    inp.value = name;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(900);
+  };
+  const abas = [...document.querySelectorAll('button.mapa-reg-bt')];
+  const tab = region ? abas.find(b => b.innerText.trim().toLowerCase().startsWith(region.toLowerCase())) : null;
   if (tab) {
     if (tab.classList.contains('mapa-area-travada')) { esc(); return { error: `região ${region} ainda travada` }; }
     if (!tab.classList.contains('on')) { tab.click(); await wait(700); }
+    await procurar();
+  } else {
+    // região desconhecida (farm de um Pokémon): procura na aba aberta e depois em cada região liberada
+    await procurar();
+    for (const b of abas.filter(x => !x.classList.contains('mapa-area-travada') && !x.classList.contains('on'))) {
+      if (findRow()) break;
+      b.click(); await wait(700);
+      await procurar();
+    }
   }
-  const inp = busca();
-  inp.value = name;
-  inp.dispatchEvent(new Event('input', { bubbles: true }));
-  await wait(900);
-  const findRow = () => [...document.querySelectorAll('.ml-linha')].find(r => (r.querySelector('.ml-nome')?.textContent || '').trim().toLowerCase() === name.toLowerCase());
   // fecha o que estiver aberto (Hunt Analyser e Mapa): botão ✕ do topo de cada janela visível
   const fecharTudo = async () => {
     for (let k = 0; k < 3; k++) {
@@ -147,7 +191,7 @@ async function pageGoHunt({ name, region }) {
     }
   };
   const row = findRow();
-  if (!row) { await fecharTudo(); return { error: `não achei "${name}" no mapa (${region})` }; }
+  if (!row) { await fecharTudo(); return { error: `não achei "${name}" no mapa${region ? ` (${region})` : ''}` }; }
   // (o selo "Caçando" da lista NÃO indica a hunt atual; quem diz é o "Nome · nível N" do jogo)
   row.click(); // abre o "Hunt Analyser" da área
   let go = null;
@@ -224,6 +268,7 @@ async function huntCheckAccount(id, manual = false) {
   if (!a || !wv || !a.focus || a.focus === 'off') return;
   const st = (huntState[id] ||= {});
   st.next = Date.now() + HUNT_EVERY;
+  if (a.focus === 'pokemon') return huntCheckSpecies(a, st, manual);
   let r;
   try { r = await withLock(wv, () => withDesktop(wv, () => runIn(wv, pageReadBestHunt, { mode: a.focus }))); }
   catch { r = { error: 'o jogo não respondeu' }; }
@@ -260,11 +305,48 @@ async function huntCheckAccount(id, manual = false) {
   await huntTrySwitch(id);
 }
 
+async function huntCheckSpecies(a, st, manual) {
+  const id = a.id, wv = pokeViews[id];
+  if (!a.alvo) { huntStatus(id, 'escolha o Pokémon que quer farmar', true); return; }
+  let r;
+  try { r = await runIn(wv, pageFindSpecies, { alvo: a.alvo, nivel: tileInfo[id]?.tlvl ?? null }); }
+  catch { r = { error: 'o jogo não respondeu', cedo: true }; }
+  if (r.error) {
+    if (r.cedo) {
+      st.falhas = (st.falhas || 0) + 1;
+      if (st.falhas <= 5) { st.next = Date.now() + 2 * 60e3; huntStatus(id, `${r.error} (tento de novo em 2 min)`, true); return; }
+    }
+    st.falhas = 0;
+    huntStatus(id, r.error, true);
+    if (manual || st.erroAlvo !== r.error) blog(`${a.name}: ${r.error}.`, 'err', 'hunt');
+    st.erroAlvo = r.error;
+    return;
+  }
+  st.falhas = 0; st.erroAlvo = null;
+  if (r.nome !== a.alvo) { // guarda o nome certinho (larvi → Larvitar)
+    a.alvo = r.nome; save();
+    const inp = wv.closest('.ptile')?.querySelector('[data-a=alvo]');
+    if (inp && document.activeElement !== inp) inp.value = r.nome;
+  }
+  const b = r.best, pct = `${Math.round(b.pct * 100)}% dos aparecimentos`;
+  const onde = `${r.liberadas} de ${r.total} hunt${r.total === 1 ? '' : 's'} com ${r.nome} liberada${r.liberadas === 1 ? '' : 's'}`;
+  if (r.current && r.current.toLowerCase() === b.nome.toLowerCase()) {
+    huntStatus(id, `farmando ${r.nome} em ${b.nome} (${pct})`);
+    if (manual) blog(`${a.name}: já está farmando ${r.nome} em ${b.nome} (${pct}; ${onde}).`, 'ok', 'hunt');
+    st.pending = null;
+    return;
+  }
+  st.pending = { name: b.nome, region: b.area === 'outland' ? 'Outland' : '', from: r.current, val: pct, gain: null, until: Date.now() + HUNT_RETRY_FOR, nextTry: 0, tries: 0 };
+  blog(`${a.name}: ${r.nome} aparece mais em ${b.nome} (${pct}; ${onde})${r.current ? `; agora em ${r.current}` : ''}. Indo…`);
+  await huntTrySwitch(id);
+}
+
 async function huntTrySwitch(id) {
   const st = huntState[id], p = st && st.pending, wv = pokeViews[id];
   if (!p || !wv) return;
   if (Date.now() > p.until) {
     blog(`${accName(id)}: desisti de ir pra ${p.name} depois de ${p.tries} tentativas (${p.lastMsg || 'sem resposta'}). Tento de novo na próxima conferência.`, 'err');
+    huntStatus(id, `desisti de ir pra ${p.name} (${p.lastMsg || 'sem resposta'})`, true);
     st.pending = null;
     return;
   }
@@ -284,6 +366,7 @@ async function huntTrySwitch(id) {
     st.pending = null;
   } else if (r.error) {
     blog(`${accName(id)}: ${r.error}.`, 'err');
+    huntStatus(id, `não fui pra ${p.name}: ${r.error}`, true);
     st.pending = null;
   } else {
     p.lastMsg = r.msg;

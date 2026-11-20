@@ -1,5 +1,5 @@
 // Acompanhar pelo celular: o main serve uma página na rede de casa e pede este resumo a cada atualização.
-// Só leitura: daqui não sai nenhum comando para o jogo nem para as lives.
+// Comandos que o celular pode mandar: voltar a jogar no PC e mudar a hunt de uma conta. Nada mexe nas lives.
 
 // preço de referência em gemas (menor anúncio no Mercado em 12/11/2026) e nome de cada item
 const ITEM_INFO = {
@@ -54,6 +54,8 @@ window.phoneStatus = function () {
       id: a.id, nome: a.name, principal: cfg.settings.pokeMain === a.id, estado,
       parada: i.parada ? { motivo: i.parada.motivo, min: Math.round((Date.now() - i.parada.desde) / 60e3) } : null,
       hunt: i.hunt || st.hunt || null, outland: !!i.outland,
+      modo: a.focus || 'off', alvo: a.alvo || '',
+      huntTxt: (a.focus || 'off') !== 'off' && window.huntStatusTxt ? huntStatusTxt(a.id).replace(/<[^>]*>/g, '') : '',
       tlvl: i.tlvl ?? st.tlvl ?? null, tlvl0: st.tlvl0 ?? null,
       pk: i.pk || st.pk || null, plvl: i.plvl ?? st.plvl ?? null, hp: i.hp ?? null, hpMax: i.hpMax ?? null,
       revives: i.revives ?? null, pocoes: i.pocoes ?? null,

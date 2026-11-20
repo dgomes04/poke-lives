@@ -49,6 +49,18 @@
   .hp { height: 5px; border-radius: 3px; background: #2a2236; overflow: hidden; margin-top: 4px; }
   .hp i { display: block; height: 100%; background: var(--ok); }
   .nota { color: var(--mut); font-size: 11px; margin: 18px 2px 0; }
+  .hctl { margin: 8px 0 2px; cursor: default; }
+  .hctl .lbl { color: var(--mut); font-size: 11px; margin-bottom: 4px; }
+  .modos { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .modos button { margin: 0; padding: 8px 0; font-size: 12px; border-radius: 8px; }
+  .modos button.on { background: #7c3aed; border-color: #7c3aed; }
+  .alvo { display: flex; gap: 6px; margin-top: 6px; }
+  .alvo input { flex: 1; min-width: 0; font: inherit; color: var(--tx); background: #0d0a13; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .alvo input:focus { border-color: #7c3aed; outline: none; }
+  .alvo button { width: auto; margin: 0; background: #7c3aed; border-color: #7c3aed; border-radius: 8px; }
+  .hst { font-size: 12px; margin-top: 6px; color: var(--mut); }
+  .hst.bom { background: #1b2a24; color: #9fe1cb; border-radius: 8px; padding: 7px 10px; }
+  .hst.mau { color: var(--warn); }
 </style>
 </head>
 <body>
@@ -121,6 +133,7 @@ function vContas(d) {
       <div class="row" style="border:0;padding:2px 0"><span style="font-weight:600;font-size:15px">${c.principal ? '★ ' : ''}${esc(c.nome)}</span><span class="tag ${estadoCls(c.estado)}">${c.estado === 'caçando' && c.outland ? 'Outland' : esc(c.estado)}</span></div>
       ${c.estado === 'aberta em outro lugar' ? `<div class="mut warn" style="margin:2px 0 4px">Aberta em outro lugar (no celular, por exemplo). O PC espera você terminar.</div><button class="retomar" data-retomar="${esc(c.id)}">Voltar a jogar no PC</button>` : ''}
       <div class="mut">${c.parada ? `<span class="err">Farm parada: ${esc(c.parada.motivo)} há ${c.parada.min} min. Compre no Market do jogo.</span>` : resumo}</div>
+      ${hunts(c, idx)}
       <div class="det">
         <div class="mut" style="margin:6px 0">${esc(c.hunt || 'sem hunt')}${c.pk ? ` · ${esc(c.pk)} Nv ${n(c.plvl)}` : ''}</div>
         ${hpPct != null ? `<div class="hp"><i style="width:${hpPct}%;${hpPct === 0 ? 'background:var(--err)' : hpPct < 35 ? 'background:var(--warn)' : ''}"></i></div>` : ''}
@@ -139,6 +152,36 @@ function vContas(d) {
         ${telas.has(idx) ? `<img class="tela" id="tela${idx}" alt="Tela de ${esc(c.nome)}" ${ultimaTela[idx] ? `src="${ultimaTela[idx]}"` : ''}>` : ''}
       </div></div>`;
   }).join('');
+}
+
+// escolha da hunt de cada conta: modo automático, um Pokémon específico ou parado
+const MODOS = [['xp', 'XP'], ['ouro', 'Ouro'], ['shiny', 'Shiny'], ['pokemon', 'Pokémon'], ['off', 'Parado']];
+const rascunho = {};   // conta -> nome digitado (sobrevive às atualizações)
+const modoAberto = {}; // conta -> mostrou o campo do Pokémon antes de confirmar
+const retorno = {};    // conta -> resposta do PC ao último comando
+function hunts(c, idx) {
+  const modo = modoAberto[c.id] || c.modo;
+  const txt = retorno[c.id] || c.huntTxt;
+  const ruim = /não|erro|travad|desisti|digite|escolha/i.test(txt || '');
+  const bom = !ruim && /farmando|já está|já na melhor|trocou|indo pra/i.test(txt || '');
+  return `<div class="hctl" data-hctl>
+    <div class="lbl">Hunt</div>
+    <div class="modos">${MODOS.map(([v, l]) => `<button data-modo="${v}" data-conta="${esc(c.id)}" class="${modo === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${modo === 'pokemon' ? `<div class="alvo"><input data-alvo="${esc(c.id)}" placeholder="Larvitar" maxlength="40" autocomplete="off" autocapitalize="words" value="${esc(rascunho[c.id] ?? c.alvo)}"><button data-cacar="${esc(c.id)}">Caçar</button></div>` : ''}
+    ${txt ? `<div class="hst ${bom ? 'bom' : ruim ? 'mau' : ''}">${esc(txt)}</div>` : modo !== 'off' && modo !== 'pokemon' ? `<div class="hst">Melhor hunt de ${MODOS.find(m => m[0] === modo)[1]}/h, conferida a cada 15 min.</div>` : ''}
+    ${modo !== 'off' && modo !== 'pokemon' ? `<button data-modo="${modo}" data-conta="${esc(c.id)}">Conferir agora</button>` : ''}
+  </div>`;
+}
+function mandarHunt(conta, modo, alvo, bt) {
+  if (bt) { bt.disabled = true; }
+  retorno[conta] = modo === 'pokemon' ? `Procurando ${alvo}…` : modo === 'off' ? '' : 'Conferindo…';
+  return fetch(`/api/hunt?k=${encodeURIComponent(K)}&conta=${encodeURIComponent(conta)}&modo=${modo}&alvo=${encodeURIComponent(alvo || '')}`, { method: 'POST' })
+    .then(r => r.json()).then(r => {
+      if (r.ok) { delete modoAberto[conta]; delete rascunho[conta]; }
+      retorno[conta] = r.ok ? '' : 'Não deu: ' + (r.msg || 'tente de novo');
+    })
+    .catch(() => { retorno[conta] = 'Sem conexão com o PC'; })
+    .finally(() => { if (ultimo) render(ultimo); setTimeout(() => { if (!/^Não deu|^Sem conexão/.test(retorno[conta] || '')) delete retorno[conta]; }, 1500); });
 }
 
 function vItens(d) {
@@ -171,10 +214,11 @@ function vShiny(d) {
 
 function render(d) {
   ultimo = d;
+  if (document.activeElement?.matches?.('#app input')) return; // não apaga o que está sendo digitado
   $('titulo').textContent = TITULOS[tab];
   const y = window.scrollY;
   $('app').innerHTML = ({ resumo: vResumo, contas: vContas, itens: vItens, shiny: vShiny })[tab](d) +
-    '<p class="nota">Valores usam o menor anúncio do Mercado (12/11) já sem a comissão de 15%. 1 gema = US$ 0,01 na compra (US$ 0,009 no saque). Esta página só mostra; o único comando é "Voltar a jogar no PC".</p>';
+    '<p class="nota">Valores usam o menor anúncio do Mercado (12/11) já sem a comissão de 15%. 1 gema = US$ 0,01 na compra (US$ 0,009 no saque). Daqui você só pode mudar a hunt das contas e voltar a jogar no PC.</p>';
   window.scrollTo(0, y);
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   if (tab === 'contas') for (const idx of telas) atualizaTela(idx);
@@ -194,11 +238,43 @@ document.addEventListener('click', (e) => {
       .catch(() => { rt.textContent = 'Sem conexão com o PC'; });
     return;
   }
+  const md = e.target.closest('[data-modo]');
+  if (md) {
+    const conta = md.dataset.conta, modo = md.dataset.modo;
+    if (modo === 'pokemon') {
+      const c = ultimo?.contas.find(x => x.id === conta);
+      modoAberto[conta] = 'pokemon';
+      if (ultimo) render(ultimo);
+      if (!c?.alvo || c.modo !== 'pokemon') document.querySelector(`[data-alvo="${CSS.escape(conta)}"]`)?.focus();
+      else mandarHunt(conta, 'pokemon', c.alvo, md);
+      return;
+    }
+    delete modoAberto[conta];
+    mandarHunt(conta, modo, '', md);
+    return;
+  }
+  const ca = e.target.closest('[data-cacar]');
+  if (ca) {
+    const conta = ca.dataset.cacar;
+    const v = (document.querySelector(`[data-alvo="${CSS.escape(conta)}"]`)?.value || '').trim();
+    if (!v) { retorno[conta] = 'Digite o nome do Pokémon'; if (ultimo) render(ultimo); return; }
+    document.activeElement?.blur?.();
+    mandarHunt(conta, 'pokemon', v, ca);
+    return;
+  }
+  if (e.target.closest('[data-hctl]')) return;
   const bt = e.target.closest('[data-tela]');
   if (bt) { const idx = +bt.dataset.tela; telas.has(idx) ? telas.delete(idx) : telas.add(idx); if (ultimo) render(ultimo); return; }
   const ac = e.target.closest('[data-acct]');
   if (ac && !e.target.closest('.det')) { const idx = +ac.dataset.acct; abertas.has(idx) ? abertas.delete(idx) : abertas.add(idx); if (ultimo) render(ultimo); }
 });
+
+document.addEventListener('input', (e) => { const i = e.target.closest('[data-alvo]'); if (i) rascunho[i.dataset.alvo] = i.value; });
+document.addEventListener('keydown', (e) => {
+  const i = e.target.closest('[data-alvo]');
+  if (i && e.key === 'Enter') { e.preventDefault(); document.querySelector(`[data-cacar="${CSS.escape(i.dataset.alvo)}"]`)?.click(); }
+});
+document.addEventListener('focusout', (e) => { if (e.target.closest?.('[data-alvo]')) setTimeout(() => { if (ultimo && !document.activeElement?.matches?.('#app input')) render(ultimo); }, 200); });
 
 function atualizaTela(idx) {
   if (!ultimo || pedindo.has(idx)) return;

@@ -583,6 +583,30 @@ function pageJogarAqui() {
   if (b) { b.click(); return true; }
   return false;
 }
+// muda o jeito de escolher a hunt de uma conta (quadro, card e celular usam esta mesma função)
+// modo: off · xp · ouro · shiny · pokemon (com o nome em alvo)
+window.mudarHunt = function (id, modo, alvo) {
+  const a = cfg.settings.pokeAccounts.find(x => x.id === id);
+  if (!a) return { ok: false, msg: 'conta não encontrada' };
+  if (!['off', 'xp', 'ouro', 'shiny', 'pokemon'].includes(modo)) return { ok: false, msg: 'modo inválido' };
+  if (modo === 'pokemon') {
+    const nome = String(alvo ?? '').replace(/[^\p{L}\p{N} .'’:-]/gu, '').trim().slice(0, 40);
+    if (!nome && !a.alvo) return { ok: false, msg: 'digite o nome do Pokémon' };
+    if (nome) a.alvo = nome;
+  }
+  const mudou = a.focus !== modo || modo === 'pokemon';
+  a.focus = modo; save();
+  if (mudou && typeof huntState !== 'undefined' && huntState[id]) { huntState[id].pending = null; huntState[id].ultima = null; }
+  const tile = pokeViews[id]?.closest('.ptile');
+  const sel = tile?.querySelector('[data-a=focus]'), inp = tile?.querySelector('[data-a=alvo]');
+  if (sel) sel.value = modo;
+  if (inp) { inp.hidden = modo !== 'pokemon'; if (document.activeElement !== inp) inp.value = a.alvo || ''; }
+  blog(`${a.name}: hunt ${modo === 'off' ? 'manual' : modo === 'pokemon' ? `farmando ${a.alvo}` : 'automática por ' + modo}.`, '', 'hunt');
+  if (modo !== 'off' && window.huntCheckAccount) window.huntCheckAccount(id, true); // não espera: a troca pode levar um minuto
+  renderPokeCards();
+  return { ok: true };
+};
+
 window.retomarConta = async function (id) {
   const wv = pokeViews[id];
   if (!wv) return { ok: false, msg: 'conta não está aberta no app' };
@@ -712,7 +736,7 @@ function renderPokeCards() {
   const box = $('pokeCards');
   if (!box || !box.classList.contains('show')) return;
   // seletor de hunt aberto num card: não redesenha agora (a escolha se perderia)
-  if (document.activeElement?.matches?.('#pokeCards select')) return;
+  if (document.activeElement?.matches?.('#pokeCards select, #pokeCards input')) return;
   const s = cfg.settings;
   const focusName = { off: 'manual', xp: 'XP/h', ouro: 'Ouro/h', shiny: 'Shiny/h' };
   if (!box.querySelector('.pcard')) box.innerHTML = '';
@@ -730,7 +754,7 @@ function renderPokeCards() {
         const fwd = e.target.closest('[data-fwd]');
         if (fwd) { pokeViews[a.id]?.closest('.ptile')?.querySelector(`[data-a=${fwd.dataset.fwd}]`)?.click(); return; }
         if (e.target.closest('[data-check]')) { checkNowAccount(a.id); return; }
-        if (e.target.closest('select')) return;
+        if (e.target.closest('select, input')) return;
         if (e.target.closest('.dd, button')) return;
         s.pokeSel = a.id; s.pokeLayout = 'focus'; save(); applyPokeLayout();
       };
@@ -742,6 +766,14 @@ function renderPokeCards() {
         if (tileSel) { tileSel.value = sel.value; tileSel.onchange(); }
         sel.blur();
         renderPokeCards();
+        if (sel.value === 'pokemon') setTimeout(() => card.querySelector('[data-card-alvo]')?.focus(), 0);
+      });
+      card.addEventListener('keydown', (e) => {
+        const inp = e.target.closest('[data-card-alvo]');
+        if (!inp || e.key !== 'Enter') return;
+        const r = mudarHunt(a.id, 'pokemon', inp.value);
+        if (!r.ok) blog(`${a.name}: ${r.msg}.`, 'err', 'hunt');
+        inp.blur(); renderPokeCards();
       });
       box.appendChild(card);
     }
@@ -802,8 +834,9 @@ function renderPokeCards() {
       <div class="pc-sub">${i.pk || '—'} Nv ${fmt(i.plvl)} <span class="muted2">· treinador ${fmt(i.tlvl)}</span></div>
       <div class="pc-hunt"><span class="pc-hname">${ic('pin')}${i.hunt ? i.hunt.replace(/ \((\d+)\)$/, ' · nível $1') : 'sem hunt'}</span>
         <select class="pc-mode ${(a.focus || 'off') === 'off' ? 'off' : ''}" data-card-focus title="Como escolher a hunt desta conta">
-          ${[['off', 'Hunt manual'], ['xp', 'Auto: XP/h'], ['ouro', 'Auto: Ouro/h'], ['shiny', 'Auto: Shiny/h']]
+          ${[['off', 'Hunt manual'], ['xp', 'Auto: XP/h'], ['ouro', 'Auto: Ouro/h'], ['shiny', 'Auto: Shiny/h'], ['pokemon', a.alvo ? `Farm: ${a.alvo}` : 'Farm: um Pokémon']]
             .map(([v, l]) => `<option value="${v}" ${(a.focus || 'off') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      ${a.focus === 'pokemon' ? `<div class="pc-alvo"><input data-card-alvo placeholder="Larvitar" maxlength="40" value="${(a.alvo || '').replace(/"/g, '&quot;')}" title="Pokémon que esta conta vai farmar (Enter pra ir)"></div>` : ''}
       ${(a.focus || 'off') !== 'off' && window.huntStatusTxt ? `<div class="pc-hst">${huntStatusTxt(a.id)}</div>` : ''}
       <div class="pc-grid">${cells.map(([l, v, cls]) => `<div class="${cls} ${prev[l] !== undefined && prev[l] !== v ? 'flash' : ''}"><small>${l}</small><b>${v}</b></div>`).join('')}</div>
       ${window.itensDaConta ? cardItens(a.id) : ''}`;
@@ -917,7 +950,8 @@ function buildPokeHub() {
         <button class="fullExit" data-a="fullx" title="Sair da tela cheia (Esc)">Sair da tela cheia</button>
         <label class="hsel" title="Troca automática de hunt (usa a extensão /hunt)">${ic('pin')}<select data-a="focus">
           <option value="off">Hunt manual</option><option value="xp">Auto: XP/h</option>
-          <option value="ouro">Auto: Ouro/h</option><option value="shiny">Auto: Shiny/h</option></select></label>
+          <option value="ouro">Auto: Ouro/h</option><option value="shiny">Auto: Shiny/h</option><option value="pokemon">Farm: um Pokémon</option></select>
+          <input class="halvo" data-a="alvo" placeholder="Larvitar" maxlength="40" title="Pokémon que esta conta vai farmar (Enter pra ir)" hidden></label>
         <button class="iconbtn sm som" data-a="som"></button>
         <div class="dd"><button class="iconbtn sm" title="Opções da conta">${ic('dots')}</button>
           <div class="menu right">
@@ -945,11 +979,18 @@ function buildPokeHub() {
       });
       const sel = tile.querySelector('[data-a=focus]');
       sel.value = a.focus || 'off';
+      const alvoInp = tile.querySelector('[data-a=alvo]');
+      alvoInp.value = a.alvo || '';
+      alvoInp.hidden = sel.value !== 'pokemon';
       sel.onchange = () => {
-        a.focus = sel.value; save();
-        blog(`${a.name}: hunt ${sel.value === 'off' ? 'manual' : 'automática por ' + sel.value}.`);
-        if (a.focus !== 'off' && window.huntCheckAccount) window.huntCheckAccount(a.id, true);
+        if (sel.value === 'pokemon' && !a.alvo) { // primeiro escolhe o Pokémon; a troca sai no Enter
+          alvoInp.hidden = false; alvoInp.focus();
+          a.focus = 'pokemon'; save(); renderPokeCards();
+          return;
+        }
+        mudarHunt(a.id, sel.value, a.alvo);
       };
+      alvoInp.onkeydown = (e) => { if (e.key === 'Enter') { const r = mudarHunt(a.id, 'pokemon', alvoInp.value); if (!r.ok) blog(`${a.name}: ${r.msg}.`, 'err', 'hunt'); alvoInp.blur(); } };
       // botão "Avaliar" num anúncio do Mercado: abre o Avaliador com aquele anúncio
       wv.addEventListener('ipc-message', (ev) => { if (ev.channel === 'avaliar' && ev.args?.[0]) window.api.avaliar(ev.args[0]); });
       // a página do jogo quebrou (falta de memória, crash): recarrega

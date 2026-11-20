@@ -7,7 +7,16 @@ if (location.hostname === 'pokeidle.io') {
   webFrame.executeJavaScript(`(() => {
     if (window.__plWsHook) return; window.__plWsHook = true;
     const Orig = window.WebSocket;
-    function WS(...a) { const ws = new Orig(...a); try { if (new URL(String(a[0]), location.href).host === location.host) window.__plWs = ws; } catch {} return ws; }
+    // lista de hunts (com os Pokémon de cada uma): vem na mensagem "welcome" do jogo; o farm de um Pokémon usa
+    const guardarHunts = (ev) => {
+      if (typeof ev.data !== 'string' || ev.data.length < 2000 || !ev.data.includes('"welcome"') || !ev.data.includes('"hunts"')) return;
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.t === 'welcome' && Array.isArray(m.hunts)) window.__plHunts = m.hunts.map(h => ({ nome: h.nome, nivel: Number(h.nivel) || 0, area: h.area || '',
+          especies: (h.especies || []).map(e => ({ nome: e.nome, pontos: Number(e.pontos) || 1 })) }));
+      } catch {}
+    };
+    function WS(...a) { const ws = new Orig(...a); try { if (new URL(String(a[0]), location.href).host === location.host) { window.__plWs = ws; ws.addEventListener('message', guardarHunts); } } catch {} return ws; }
     WS.prototype = Orig.prototype;
     for (const k of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) WS[k] = Orig[k];
     window.WebSocket = WS;

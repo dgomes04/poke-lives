@@ -427,3 +427,7 @@ button.ghost:hover { color: var(--text); background: var(--card2); }
 
 .ptile .tbar .som { flex: none; color: var(--muted); }
 .ptile .tbar .som.on { color: var(--accent-2); background: var(--accent-bg); }
+.ptile .tbar .halvo { width: 92px; background: var(--card2); border: 1px solid var(--accent); color: var(--text); font-size: 11px; padding: 2px 7px; border-radius: 999px; }
+.pc-alvo { margin: 4px 0 0; }
+.pc-alvo input { width: 100%; background: var(--card2); border: 1px solid var(--line, var(--accent-bg)); color: var(--text); font-size: 12px; padding: 5px 10px; border-radius: 8px; }
+.pc-alvo input:focus { border-color: var(--accent); outline: none; }

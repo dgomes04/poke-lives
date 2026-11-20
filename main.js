@@ -453,7 +453,8 @@ async function startPhone(cfg) {
   phoneSrv = require('http').createServer(async (req, res) => {
     let u;
     try { u = new URL(req.url, 'http://x'); } catch { res.statusCode = 400; return res.end(); }
-    const acao = req.method === 'POST' && u.pathname === '/api/retomar'; // único comando: voltar a jogar no PC
+    // comandos: voltar a jogar no PC e mudar a hunt de uma conta
+    const acao = req.method === 'POST' && (u.pathname === '/api/retomar' || u.pathname === '/api/hunt');
     if ((req.method !== 'GET' && !acao) || !ok(u.searchParams.get('k'))) { res.statusCode = 403; return res.end('Acesso negado'); }
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
@@ -473,6 +474,14 @@ async function startPhone(cfg) {
         };
         req.on('close', () => { vivo = false; });
         return envia();
+      }
+      if (acao && u.pathname === '/api/hunt') {
+        const id = String(u.searchParams.get('conta') || '').slice(0, 60);
+        const modo = String(u.searchParams.get('modo') || '').slice(0, 10);
+        const alvo = String(u.searchParams.get('alvo') || '').slice(0, 40);
+        const r = await phoneData(`window.mudarHunt ? window.mudarHunt(${JSON.stringify(id)}, ${JSON.stringify(modo)}, ${JSON.stringify(alvo)}) : { ok: false, msg: 'o app ainda está carregando' }`);
+        res.setHeader('Content-Type', 'application/json');
+        return res.end(JSON.stringify(r || { ok: false }));
       }
       if (acao) {
         const id = String(u.searchParams.get('conta') || '');
